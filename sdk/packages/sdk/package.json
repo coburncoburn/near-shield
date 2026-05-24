@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/curves": "^1.6.0",
     "@shielded-near/core": "workspace:*"
   },
   "devDependencies": {

@@ -1,3 +1,4 @@
+import { x25519 } from "@noble/curves/ed25519";
 import {
   Field,
   commitNote,
@@ -143,6 +144,70 @@ export class Wallet {
     };
   }
 
+  buildTransfer(req: TransferRequest): BuiltTx {
+    if (req.amount <= 0n) {
+      throw new Error("transfer amount must be positive");
+    }
+    // Pick a single input note that covers the amount (v0: exact match).
+    // A production splitter would handle change as a second output; here we
+    // emit a 2-out structure where the second output carries the change back
+    // to the sender.
+    const input = this.notes.find((n) => n.note.amount >= req.amount);
+    if (!input) {
+      throw new Error(`no unspent note >= ${req.amount} (have: ${this.balance()})`);
+    }
+
+    const senderAuditorField = input.note.auditorPubkey;
+    const nullifier = computeNullifier(this.spendingKey, input.commitment, input.leafIndex);
+
+    const recipientAuditorField = pubkeyToField(req.recipientAuditorPubkey);
+    const recipientOut: Note = {
+      amount: req.amount,
+      ownerPubkey: req.recipientOwnerPubkey,
+      auditorPubkey: recipientAuditorField,
+      blinding: randomField(),
+    };
+    const changeOut: Note = {
+      amount: input.note.amount - req.amount,
+      ownerPubkey: this.ownerPubkey,
+      auditorPubkey: senderAuditorField,
+      blinding: randomField(),
+    };
+    const c_recipient = commitNote(recipientOut);
+    const c_change = commitNote(changeOut);
+
+    const disclosure: ViewDisclosure = {
+      action: "transfer",
+      senderOwnerPubkey: this.ownerPubkey.toHex(),
+      recipientOwnerPubkey: req.recipientOwnerPubkey.toHex(),
+      amounts: [req.amount.toString(), changeOut.amount.toString()],
+      memo: req.memo ?? "",
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    const viewCtSender = sealTo(fieldToPubkey(senderAuditorField), encodeDisclosure(disclosure));
+    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure));
+
+    // Note ciphertexts: one to recipient's vk (for the recipient output) and
+    // one to the sender's own vk (for the change output).
+    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNote(recipientOut));
+    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNote(changeOut));
+
+    return {
+      method: "transfer",
+      publicInputs: {
+        nullifier: nullifier.toHex(),
+        commitmentRecipient: c_recipient.toHex(),
+        commitmentChange: c_change.toHex(),
+        auditorPubkey: senderAuditorField.toHex(),
+        recipientAuditorPubkey: recipientAuditorField.toHex(),
+        amounts: [req.amount.toString(), changeOut.amount.toString()],
+      },
+      proof: new Uint8Array([0]),
+      viewCiphertexts: [viewCtSender, viewCtRecipient],
+      noteCiphertexts: [noteCtRecipient, noteCtChange],
+    };
+  }
+
   buildWithdraw(req: WithdrawRequest): BuiltTx {
     if (req.relayerFee > req.amount) {
       throw new Error("relayer_fee exceeds amount");
@@ -211,10 +276,6 @@ function fieldToPubkey(f: Field): Uint8Array {
 }
 
 function deriveX25519Pub(priv: Uint8Array): Uint8Array {
-  // Inline minimal derivation that matches @noble/curves x25519.getPublicKey;
-  // factored out here to avoid pulling the dep at module top.
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const { x25519 } = require("@noble/curves/ed25519") as typeof import("@noble/curves/ed25519");
   return x25519.getPublicKey(priv);
 }
 

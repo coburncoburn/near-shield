@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateKeyPair } from "@shielded-near/core";
+import { Field, generateKeyPair } from "@shielded-near/core";
 import { Wallet, type WalletConfig } from "./wallet.js";
 
 function makeConfig(): WalletConfig {
@@ -71,6 +71,50 @@ describe("Wallet", () => {
         recipientNearAccount: "bob.near",
         relayer: "relayer.near",
         relayerFee: 999n,
+      })
+    ).toThrow();
+  });
+
+  it("buildTransfer produces 2-out tx with both auditor view cts and conserves value", () => {
+    const alice = new Wallet(makeConfig());
+    const bob = new Wallet(makeConfig());
+    const auditorA = generateKeyPair();
+    const auditorB = generateKeyPair();
+    const dep = alice.buildDeposit({ amount: 100n, auditorPubkey: auditorA.publicKey });
+    alice.scan(dep.noteCiphertexts.map((sealed, i) => ({ leafIndex: BigInt(i), sealed })));
+    const tx = alice.buildTransfer({
+      amount: 60n,
+      recipientOwnerPubkey: Field.fromHex(bob.address().ownerPubkey),
+      recipientAuditorPubkey: auditorB.publicKey,
+      recipientViewingPubkey: new Uint8Array(Buffer.from(bob.address().viewingPubkey, "hex")),
+      memo: "test",
+    });
+    expect(tx.method).toBe("transfer");
+    expect(tx.viewCiphertexts).toHaveLength(2);
+    expect(tx.noteCiphertexts).toHaveLength(2);
+    expect(tx.publicInputs.amounts).toEqual(["60", "40"]);
+  });
+
+  it("buildTransfer refuses when no input note covers the amount", () => {
+    const w = new Wallet(makeConfig());
+    expect(() =>
+      w.buildTransfer({
+        amount: 100n,
+        recipientOwnerPubkey: Field.fromU64(1),
+        recipientAuditorPubkey: new Uint8Array(32),
+        recipientViewingPubkey: new Uint8Array(32),
+      })
+    ).toThrow();
+  });
+
+  it("buildTransfer refuses zero or negative amounts", () => {
+    const w = new Wallet(makeConfig());
+    expect(() =>
+      w.buildTransfer({
+        amount: 0n,
+        recipientOwnerPubkey: Field.fromU64(1),
+        recipientAuditorPubkey: new Uint8Array(32),
+        recipientViewingPubkey: new Uint8Array(32),
       })
     ).toThrow();
   });

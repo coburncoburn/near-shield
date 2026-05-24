@@ -1,1 +1,8 @@
-export { Wallet, type WalletConfig, type DepositRequest, type TransferRequest, type WithdrawRequest, type BuiltTx } from "./wallet.js";
+export {
+  Wallet,
+  type BuiltTx,
+  type DepositRequest,
+  type TransferRequest,
+  type WalletConfig,
+  type WithdrawRequest,
+} from "./wallet.js";
