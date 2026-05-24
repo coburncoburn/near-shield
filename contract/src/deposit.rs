@@ -1,6 +1,7 @@
 use crate::poseidon::Field;
 use crate::verifier::{MockVerifier, Verifier};
 use crate::{events, Contract, ContractExt};
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{json_types::U128, near};
 
 pub(crate) fn parse_hex32(s: &str) -> Option<Field> {
@@ -12,15 +13,9 @@ pub(crate) fn parse_hex32(s: &str) -> Option<Field> {
     Some(Field::from_be_bytes(&bytes))
 }
 
-/// Reduces a byte string to a single Field by SHA256-mod-p. Used for binding
-/// opaque bytes (view ciphertexts, account ids) into proof public inputs.
 pub(crate) fn hash_bytes_to_field(b: &[u8]) -> Field {
     use light_poseidon::{Poseidon, PoseidonHasher};
-    // Chunk into 31-byte field-safe pieces and Poseidon-hash them together.
-    let chunks: Vec<Field> = b
-        .chunks(31)
-        .map(|c| Field::from_bytes_le(c))
-        .collect();
+    let chunks: Vec<Field> = b.chunks(31).map(|c| Field::from_bytes_le(c)).collect();
     if chunks.is_empty() {
         return Field::zero();
     }
@@ -35,13 +30,49 @@ pub(crate) fn hash_bytes_to_field(b: &[u8]) -> Field {
     acc
 }
 
+/// JSON payload the user attaches to a NEP-141 `ft_transfer_call(msg=...)`
+/// when depositing USDC into the shielded pool.
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct DepositArgs {
+    pub commitment: String,
+    pub amount: U128,
+    pub auditor_pubkey: String,
+    pub view_ct: String,
+    pub note_ct: String,
+    pub proof: Vec<u8>,
+}
+
+impl Contract {
+    /// Internal deposit core. Called both by the legacy direct `deposit()`
+    /// entry (kept for unit tests) and by `ft_on_transfer` (the production
+    /// path that requires real USDC to have been transferred in).
+    pub(crate) fn do_deposit(&mut self, args: DepositArgs) {
+        let commitment_field = parse_hex32(&args.commitment).expect("bad commitment hex");
+        let auditor_field = parse_hex32(&args.auditor_pubkey).expect("bad auditor hex");
+
+        let pi = [
+            commitment_field,
+            Field::from_u128(args.amount.0),
+            auditor_field,
+            hash_bytes_to_field(args.view_ct.as_bytes()),
+        ];
+        assert!(
+            MockVerifier::default().verify(&args.proof, &pi),
+            "invalid proof"
+        );
+
+        let leaf_index = self.tree.insert(commitment_field);
+        self.recent_roots.push(self.tree.root());
+        events::emit_deposit(&args.commitment, leaf_index, &args.view_ct, &args.note_ct);
+    }
+}
+
 #[near]
 impl Contract {
-    /// Deposits USDC into the pool by inserting a new note commitment.
-    ///
-    /// v0 uses `MockVerifier` so unit tests can drive end-to-end flows.
-    /// The real barretenberg verifier replaces the mock in a later task
-    /// without changing this method's signature.
+    /// Direct deposit (no FT transfer). Used by tests and by future variants
+    /// where the contract is funded out-of-band. The production deposit path
+    /// is `ft_on_transfer` in `ft.rs`.
     pub fn deposit(
         &mut self,
         commitment: String,
@@ -51,25 +82,14 @@ impl Contract {
         note_ct: String,
         proof: Vec<u8>,
     ) {
-        let commitment_field = parse_hex32(&commitment).expect("bad commitment hex");
-        let auditor_field = parse_hex32(&auditor_pubkey).expect("bad auditor hex");
-
-        let pi = [
-            commitment_field,
-            Field::from_u128(amount.0),
-            auditor_field,
-            hash_bytes_to_field(view_ct.as_bytes()),
-        ];
-
-        let verifier = MockVerifier::default();
-        assert!(verifier.verify(&proof, &pi), "invalid proof");
-
-        let leaf_index = self.tree.insert(commitment_field);
-        self.recent_roots.push(self.tree.root());
-        events::emit_deposit(&commitment, leaf_index, &view_ct, &note_ct);
-
-        // FT transfer-in is wired up in Task 12 (ft_on_transfer cross-contract
-        // pattern). For now the deposit is a logical book entry only.
+        self.do_deposit(DepositArgs {
+            commitment,
+            amount,
+            auditor_pubkey,
+            view_ct,
+            note_ct,
+            proof,
+        });
     }
 }
 
@@ -162,8 +182,6 @@ mod tests {
             vec![1],
         );
         let root = c.merkle_root();
-        assert!(c.recent_roots.contains(
-            &crate::deposit::parse_hex32(&root).unwrap()
-        ));
+        assert!(c.recent_roots.contains(&crate::deposit::parse_hex32(&root).unwrap()));
     }
 }

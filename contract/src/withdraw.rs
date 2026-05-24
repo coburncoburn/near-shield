@@ -56,8 +56,14 @@ impl Contract {
             &view_ct,
         );
 
-        // FT payout (ft_transfer to recipient and relayer) is wired up in
-        // the FT integration task. v0 in-memory tests stop at event emission.
+        // Pay out USDC via NEP-141 ft_transfer. Two cross-contract calls:
+        // one to the recipient (amount - fee) and one to the relayer (fee).
+        // If fee is 0 we skip the relayer payment.
+        let payout = amount.0 - relayer_fee.0;
+        let _ = self.pay_ft(recipient, payout);
+        if relayer_fee.0 > 0 {
+            let _ = self.pay_ft(relayer, relayer_fee.0);
+        }
     }
 }
 

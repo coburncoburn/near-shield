@@ -2,6 +2,7 @@ use near_sdk::{near, AccountId, PanicOnDefault};
 
 pub mod deposit;
 pub mod events;
+pub mod ft;
 pub mod merkle;
 pub mod nullifiers;
 pub mod poseidon;

@@ -1,12 +1,13 @@
 // Shielded pool -- shared circuit primitives.
 //
 // IMPORTANT: This implementation uses Noir stdlib's Pedersen hash for
-// commitments and nullifiers. The Rust contract and TypeScript SDK currently
-// use Poseidon2 via light-poseidon (circom params). Aligning the hash function
-// across all three layers is a known unfinished task (referenced in the spec's
-// "open questions deferred to plan phase" -- the alignment work converges on a
-// single Poseidon2 implementation in a follow-up commit). The structure of the
-// circuits below is correct; only the specific hash invocation must converge.
+// commitments, nullifiers, AND Merkle tree hashing. The Rust contract and
+// TypeScript SDK currently use Poseidon2 via light-poseidon (circom params).
+// Aligning the hash function across all three layers is a known unfinished
+// task (referenced in the spec's "open questions deferred to plan phase" --
+// the alignment work converges on a single Poseidon2 implementation in a
+// follow-up commit). The structure of the circuits below is correct; only
+// the specific hash invocation must converge.
 
 pub struct Note {
     pub amount: Field,
@@ -33,6 +34,33 @@ pub fn nullifier_of(spending_key: Field, commitment: Field, leaf_index: Field) -
 
 pub fn owner_pubkey_of(spending_key: Field) -> Field {
     std::hash::pedersen_hash([spending_key, 0])
+}
+
+/// Verifies a Merkle inclusion proof: that `leaf` is at `leaf_index` in a tree
+/// whose root is `root`. `path` carries the sibling at each level (from leaf
+/// to root). At each level, the bit `leaf_index & 1` selects whether the
+/// current value is the left (0) or right (1) child.
+pub fn verify_merkle_proof<let DEPTH: u32>(
+    root: Field,
+    leaf: Field,
+    leaf_index: Field,
+    path: [Field; DEPTH],
+) {
+    let mut current = leaf;
+    let bits = leaf_index.to_le_bits::<DEPTH>();
+    for level in 0..DEPTH {
+        let sibling = path[level];
+        let bit = bits[level];
+        // bit == 0: current is left, sibling is right
+        // bit == 1: current is right, sibling is left
+        let (l, r) = if bit {
+            (sibling, current)
+        } else {
+            (current, sibling)
+        };
+        current = std::hash::pedersen_hash([l, r]);
+    }
+    assert(current == root);
 }
 
 #[test]
@@ -69,4 +97,47 @@ fn nullifier_sensitive_to_inputs() {
     assert(nullifier_of(99, 123, 7) != nullifier_of(99, 123, 8));
     assert(nullifier_of(99, 123, 7) != nullifier_of(100, 123, 7));
     assert(nullifier_of(99, 123, 7) != nullifier_of(99, 124, 7));
+}
+
+#[test]
+fn merkle_proof_verifies_depth_2_leaf_0() {
+    // Tree with leaves [10, 20, 30, 40] (only first two real, last two zero
+    // doesn't apply here -- this test uses all four). Sibling at level 0 for
+    // leaf_index=0 is leaves[1]; sibling at level 1 is hash(leaves[2..4]).
+    let l0: Field = 10;
+    let l1: Field = 20;
+    let l2: Field = 30;
+    let l3: Field = 40;
+    let h01 = std::hash::pedersen_hash([l0, l1]);
+    let h23 = std::hash::pedersen_hash([l2, l3]);
+    let root = std::hash::pedersen_hash([h01, h23]);
+    let path: [Field; 2] = [l1, h23];
+    verify_merkle_proof(root, l0, 0, path);
+}
+
+#[test]
+fn merkle_proof_verifies_depth_2_leaf_3() {
+    let l0: Field = 10;
+    let l1: Field = 20;
+    let l2: Field = 30;
+    let l3: Field = 40;
+    let h01 = std::hash::pedersen_hash([l0, l1]);
+    let h23 = std::hash::pedersen_hash([l2, l3]);
+    let root = std::hash::pedersen_hash([h01, h23]);
+    // leaf_index = 3 = 0b11; sibling at level 0 is l2, at level 1 is h01.
+    let path: [Field; 2] = [l2, h01];
+    verify_merkle_proof(root, l3, 3, path);
+}
+
+#[test(should_fail)]
+fn merkle_proof_with_wrong_sibling_fails() {
+    let l0: Field = 10;
+    let l1: Field = 20;
+    let l2: Field = 30;
+    let l3: Field = 40;
+    let h01 = std::hash::pedersen_hash([l0, l1]);
+    let h23 = std::hash::pedersen_hash([l2, l3]);
+    let root = std::hash::pedersen_hash([h01, h23]);
+    let bad_path: [Field; 2] = [l2, h23]; // wrong: level-0 sibling should be l1
+    verify_merkle_proof(root, l0, 0, bad_path);
 }
