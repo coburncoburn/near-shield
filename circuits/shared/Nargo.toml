@@ -1,0 +1,6 @@
+[package]
+name = "shielded_shared"
+type = "lib"
+authors = [""]
+
+[dependencies]

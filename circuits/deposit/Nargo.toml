@@ -1,0 +1,7 @@
+[package]
+name = "shielded_deposit"
+type = "bin"
+authors = [""]
+
+[dependencies]
+shielded_shared = { path = "../shared" }
