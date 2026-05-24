@@ -1,5 +1,5 @@
 {
-  "name": "@shielded-near/core",
+  "name": "@shielded-near/sdk",
   "version": "0.1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -12,10 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@noble/ciphers": "^1.0.0",
-    "@noble/curves": "^1.6.0",
-    "@noble/hashes": "^1.5.0",
-    "poseidon-lite": "^0.3.0"
+    "@shielded-near/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
