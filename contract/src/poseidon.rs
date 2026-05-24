@@ -90,6 +90,17 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    fn dump_cross_lang_vectors() {
+        // Run with: cargo test -p shielded-pool poseidon::tests::dump_cross_lang_vectors -- --ignored --nocapture
+        println!("p2_1_2={}", poseidon2(Field::from_u64(1), Field::from_u64(2)).to_hex());
+        println!("p2_3_4={}", poseidon2(Field::from_u64(3), Field::from_u64(4)).to_hex());
+        println!("p2_0_0={}", poseidon2(Field::zero(), Field::zero()).to_hex());
+        println!("p4_1_2_3_4={}", poseidon4(Field::from_u64(1), Field::from_u64(2), Field::from_u64(3), Field::from_u64(4)).to_hex());
+        println!("p4_0_0_0_0={}", poseidon4(Field::zero(), Field::zero(), Field::zero(), Field::zero()).to_hex());
+    }
+
+    #[test]
     fn poseidon2_known_vector() {
         // light-poseidon (circom params) of [1, 2] over BN254.
         // The exact hex must match what we lock in for cross-language tests.
