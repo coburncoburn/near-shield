@@ -16,6 +16,8 @@
 import { describe, expect, it } from "vitest";
 import {
   encodeDisclosure,
+  encodeNotePayload,
+  Field,
   generateKeyPair,
   sealTo,
   type NoteCiphertext,
@@ -29,10 +31,6 @@ function makeSeed(byte: number): Uint8Array {
 
 function ctsFromBuilt(builtNoteCts: Uint8Array[], startIdx: bigint): NoteCiphertext[] {
   return builtNoteCts.map((sealed, i) => ({ leafIndex: startIdx + BigInt(i), sealed }));
-}
-
-function hex(b: Uint8Array): string {
-  return Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 describe("canonical e2e", () => {
@@ -71,9 +69,8 @@ describe("canonical e2e", () => {
     alice.scan(ctsFromBuilt(deposit.noteCiphertexts, 0n));
     expect(alice.balance()).toBe(100n);
 
-    // 2) Alice "transfers" a 100 note to Bob. (Wallet.buildTransfer is part of
-    // a later task; here we drive the scanner + auditor pieces directly using
-    // primitives, which is what the eventual transfer-builder will compose.)
+    // 2) Alice transfers a 100 note to Bob. This in-process scenario still
+    // drives the scanner + auditor pieces directly so it can stay chainless.
     const transferDisclosure = {
       action: "transfer" as const,
       senderOwnerPubkey: alice.address().ownerPubkey,
@@ -88,14 +85,12 @@ describe("canonical e2e", () => {
     // Note ciphertext addressed to Bob's viewing key
     const noteForBob = sealTo(
       bob.viewingKey.publicKey,
-      new TextEncoder().encode(
-        JSON.stringify({
-          amount: "100",
-          ownerPubkey: bob.address().ownerPubkey,
-          auditorPubkey: "0x" + hex(auditorB.publicKey),
-          blinding: "0x" + "11".repeat(32),
-        })
-      )
+      encodeNotePayload({
+        amount: 100n,
+        ownerPubkey: Field.fromHex(bob.address().ownerPubkey),
+        auditorPubkey: Field.fromHex("0x" + Buffer.from(auditorB.publicKey).toString("hex")),
+        blinding: Field.fromHex("0x" + "11".repeat(32)),
+      }, auditorB.publicKey)
     );
 
     const transferEvent: RawEvent = {

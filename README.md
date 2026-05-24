@@ -8,7 +8,7 @@ See [`docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md`](docs/supe
 
 Two cryptographic preconditions are not yet met. Until both are fixed, deployment to any chain handling real value would result in **trivially forgeable proofs** and **circuits that prove the wrong commitments**:
 
-1. **Real verifier not integrated.** The contract uses `MockVerifier`, which accepts any non-empty proof. A compile-time guard in `contract/src/verifier.rs` rejects production WASM builds without the `bb-verifier` feature flag (which itself still needs to wire in Barretenberg's WASM verifier).
+1. **Real verifier not integrated.** Host-side tests use `MockVerifier`, which accepts any non-empty proof. WASM builds with the default `unit-testing` feature are rejected, and `--no-default-features --features bb-verifier` selects a fail-closed placeholder that rejects every proof until Barretenberg verification is wired in.
 2. **Hash function mismatch across layers.** Rust contract and TypeScript SDK use Poseidon2 (`light-poseidon` circom params). Noir circuits currently use Pedersen (see `circuits/shared/src/lib.nr`). The three layers must converge on the same Poseidon2 implementation before commitments and nullifiers agree end-to-end.
 
 ## Layout

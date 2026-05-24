@@ -1,5 +1,5 @@
 use crate::poseidon::Field;
-use crate::verifier::{MockVerifier, Verifier};
+use crate::verifier::{SelectedVerifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{json_types::U128, near};
@@ -58,7 +58,7 @@ impl Contract {
             hash_bytes_to_field(args.view_ct.as_bytes()),
         ];
         assert!(
-            MockVerifier::default().verify(&args.proof, &pi),
+            SelectedVerifier::default().verify(&args.proof, &pi),
             "invalid proof"
         );
 

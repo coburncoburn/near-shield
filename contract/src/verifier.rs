@@ -1,7 +1,7 @@
 use crate::poseidon::Field;
 
-/// Interface for zk proof verifiers. v0 ships a `MockVerifier` for unit tests
-/// and an unimplemented `BbVerifier` placeholder for the real barretenberg
+/// Interface for zk proof verifiers. v0 ships a `MockVerifier` for host-side
+/// tests and a fail-closed `BbVerifier` placeholder for the real Barretenberg
 /// integration that lands in a later task.
 pub trait Verifier {
     fn verify(&self, proof: &[u8], public_inputs: &[Field]) -> bool;
@@ -11,9 +11,9 @@ pub trait Verifier {
 /// Used to drive contract-level unit tests of state transitions before the
 /// real verifier is wired in.
 ///
-/// SAFETY: This type is `#[cfg(any(test, feature = "unit-testing"))]`-gated
-/// so it cannot exist in a production WASM build. Any deployment must enable
-/// the `bb-verifier` feature, which swaps in the real Barretenberg verifier.
+/// SAFETY: WASM builds with `unit-testing` enabled are rejected below before
+/// deployment can succeed. Any deployable build must use the `bb-verifier`
+/// feature path instead.
 #[cfg(any(test, feature = "unit-testing"))]
 #[derive(Default)]
 pub struct MockVerifier;
@@ -25,17 +25,45 @@ impl Verifier for MockVerifier {
     }
 }
 
-/// Compile-time check: a production build with no real verifier feature is
-/// rejected, preventing accidental deployment with `MockVerifier` semantics.
+/// Production verifier placeholder. Until this is wired to Barretenberg, it
+/// rejects every proof so a `bb-verifier` build is not forgeable by accident.
+#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+#[derive(Default)]
+pub struct BbVerifier;
+
+#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+impl Verifier for BbVerifier {
+    fn verify(&self, _proof: &[u8], _public_inputs: &[Field]) -> bool {
+        false
+    }
+}
+
+#[cfg(any(test, feature = "unit-testing"))]
+pub type SelectedVerifier = MockVerifier;
+
+#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+pub type SelectedVerifier = BbVerifier;
+
+// Compile-time checks reject deployable builds that would use mock verifier
+// semantics or omit the real verifier feature.
 #[cfg(all(
     target_family = "wasm",
-    not(feature = "bb-verifier"),
-    not(feature = "unit-testing")
+    feature = "unit-testing"
+))]
+compile_error!(
+    "WASM contract builds must disable `unit-testing`. \
+     Run: `cargo near build --no-default-features --features bb-verifier`"
+);
+
+#[cfg(all(
+    target_family = "wasm",
+    not(feature = "unit-testing"),
+    not(feature = "bb-verifier")
 ))]
 compile_error!(
     "Production contract build must enable the `bb-verifier` feature. \
      Building without a real verifier would make zk proofs trivially forgeable. \
-     Run: `cargo near build --features bb-verifier`"
+     Run: `cargo near build --no-default-features --features bb-verifier`"
 );
 
 #[cfg(test)]

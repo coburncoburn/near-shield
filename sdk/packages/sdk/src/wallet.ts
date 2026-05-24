@@ -4,6 +4,7 @@ import {
   commitNote,
   computeNullifier,
   encodeDisclosure,
+  encodeNotePayload,
   generateKeyPair,
   poseidon2,
   scanNotes,
@@ -129,7 +130,7 @@ export class Wallet {
       timestamp: Math.floor(Date.now() / 1000),
     };
     const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure));
-    const noteCt = sealTo(this.viewingKey.publicKey, encodeNote(note));
+    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey));
     return {
       method: "deposit",
       publicInputs: {
@@ -148,17 +149,20 @@ export class Wallet {
     if (req.amount <= 0n) {
       throw new Error("transfer amount must be positive");
     }
-    // Pick a single input note that covers the amount (v0: exact match).
-    // A production splitter would handle change as a second output; here we
-    // emit a 2-out structure where the second output carries the change back
-    // to the sender.
-    const input = this.notes.find((n) => n.note.amount >= req.amount);
-    if (!input) {
-      throw new Error(`no unspent note >= ${req.amount} (have: ${this.balance()})`);
+    const inputs = this.findTransferInputs(req.amount);
+    if (!inputs) {
+      throw new Error(`no two unspent notes cover ${req.amount} with the same auditor (have: ${this.balance()})`);
     }
 
-    const senderAuditorField = input.note.auditorPubkey;
-    const nullifier = computeNullifier(this.spendingKey, input.commitment, input.leafIndex);
+    const [input0, input1] = inputs;
+    const senderAuditorField = input0.note.auditorPubkey;
+    const senderAuditorPubkey = input0.auditorPubkeyBytes;
+    if (!senderAuditorPubkey) {
+      throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
+    }
+    const nullifier0 = computeNullifier(this.spendingKey, input0.commitment, input0.leafIndex);
+    const nullifier1 = computeNullifier(this.spendingKey, input1.commitment, input1.leafIndex);
+    const inputTotal = input0.note.amount + input1.note.amount;
 
     const recipientAuditorField = pubkeyToField(req.recipientAuditorPubkey);
     const recipientOut: Note = {
@@ -168,7 +172,7 @@ export class Wallet {
       blinding: randomField(),
     };
     const changeOut: Note = {
-      amount: input.note.amount - req.amount,
+      amount: inputTotal - req.amount,
       ownerPubkey: this.ownerPubkey,
       auditorPubkey: senderAuditorField,
       blinding: randomField(),
@@ -184,20 +188,20 @@ export class Wallet {
       memo: req.memo ?? "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    const viewCtSender = sealTo(fieldToPubkey(senderAuditorField), encodeDisclosure(disclosure));
+    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure));
     const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure));
 
     // Note ciphertexts: one to recipient's vk (for the recipient output) and
     // one to the sender's own vk (for the change output).
-    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNote(recipientOut));
-    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNote(changeOut));
+    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey));
+    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey));
 
     return {
       method: "transfer",
       publicInputs: {
-        nullifier: nullifier.toHex(),
-        commitmentRecipient: c_recipient.toHex(),
-        commitmentChange: c_change.toHex(),
+        merkleRoot: "",
+        nullifiers: [nullifier0.toHex(), nullifier1.toHex()],
+        commitments: [c_recipient.toHex(), c_change.toHex()],
         auditorPubkey: senderAuditorField.toHex(),
         recipientAuditorPubkey: recipientAuditorField.toHex(),
         amounts: [req.amount.toString(), changeOut.amount.toString()],
@@ -225,12 +229,11 @@ export class Wallet {
       memo: "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    // We don't know the auditor's pubkey bytes here; use the field form.
     const auditorField = note.note.auditorPubkey;
-    const viewCt = sealTo(
-      fieldToPubkey(auditorField),
-      encodeDisclosure(disclosure)
-    );
+    if (!note.auditorPubkeyBytes) {
+      throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
+    }
+    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure));
     return {
       method: "withdraw",
       publicInputs: {
@@ -245,6 +248,21 @@ export class Wallet {
       viewCiphertexts: [viewCt],
       noteCiphertexts: [],
     };
+  }
+
+  private findTransferInputs(amount: bigint): [DiscoveredNote, DiscoveredNote] | null {
+    for (let i = 0; i < this.notes.length; i++) {
+      for (let j = i + 1; j < this.notes.length; j++) {
+        const a = this.notes[i];
+        const b = this.notes[j];
+        if (!a.note.auditorPubkey.equals(b.note.auditorPubkey)) continue;
+        if (!sameBytes(a.auditorPubkeyBytes, b.auditorPubkeyBytes)) continue;
+        if (a.note.amount + b.note.amount >= amount) {
+          return [a, b];
+        }
+      }
+    }
+    return null;
   }
 }
 
@@ -265,27 +283,11 @@ function pubkeyToField(pk: Uint8Array): Field {
   return new Field(BigInt("0x" + hex(pk)));
 }
 
-/**
- * Reduces a 32-byte pubkey to a Field for in-circuit use. The inverse is lossy
- * (the field is mod p, not full 32-byte space) so we keep a separate
- * `fieldToPubkey` that simply re-emits the field bytes; the caller is expected
- * to track the pubkey bytes out-of-band where round-trip fidelity matters.
- */
-function fieldToPubkey(f: Field): Uint8Array {
-  return f.toBytesBE();
-}
-
 function deriveX25519Pub(priv: Uint8Array): Uint8Array {
   return x25519.getPublicKey(priv);
 }
 
-function encodeNote(n: Note): Uint8Array {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      amount: n.amount.toString(),
-      ownerPubkey: n.ownerPubkey.toHex(),
-      auditorPubkey: n.auditorPubkey.toHex(),
-      blinding: n.blinding.toHex(),
-    })
-  );
+function sameBytes(a: Uint8Array | undefined, b: Uint8Array | undefined): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((x, i) => x === b[i]);
 }

@@ -8,9 +8,12 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# Used during local development. For WASM contract build, omit this feature.
+# Used during local development. WASM builds with this feature are rejected.
 default = ["unit-testing"]
 unit-testing = ["near-sdk/unit-testing"]
+# Placeholder feature for the production verifier path. It currently fails
+# closed until Barretenberg verification is wired in.
+bb-verifier = []
 
 [dependencies]
 near-sdk = { workspace = true }

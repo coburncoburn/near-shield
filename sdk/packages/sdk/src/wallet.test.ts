@@ -80,8 +80,12 @@ describe("Wallet", () => {
     const bob = new Wallet(makeConfig());
     const auditorA = generateKeyPair();
     const auditorB = generateKeyPair();
-    const dep = alice.buildDeposit({ amount: 100n, auditorPubkey: auditorA.publicKey });
-    alice.scan(dep.noteCiphertexts.map((sealed, i) => ({ leafIndex: BigInt(i), sealed })));
+    const dep0 = alice.buildDeposit({ amount: 40n, auditorPubkey: auditorA.publicKey });
+    const dep1 = alice.buildDeposit({ amount: 60n, auditorPubkey: auditorA.publicKey });
+    alice.scan([
+      ...dep0.noteCiphertexts.map((sealed, i) => ({ leafIndex: BigInt(i), sealed })),
+      ...dep1.noteCiphertexts.map((sealed, i) => ({ leafIndex: BigInt(i + 1), sealed })),
+    ]);
     const tx = alice.buildTransfer({
       amount: 60n,
       recipientOwnerPubkey: Field.fromHex(bob.address().ownerPubkey),
@@ -93,6 +97,8 @@ describe("Wallet", () => {
     expect(tx.viewCiphertexts).toHaveLength(2);
     expect(tx.noteCiphertexts).toHaveLength(2);
     expect(tx.publicInputs.amounts).toEqual(["60", "40"]);
+    expect(tx.publicInputs.nullifiers).toHaveLength(2);
+    expect(tx.publicInputs.commitments).toHaveLength(2);
   });
 
   it("buildTransfer refuses when no input note covers the amount", () => {

@@ -110,7 +110,7 @@ mod tests {
     #[should_panic(expected = "amount mismatch")]
     fn ft_on_transfer_amount_mismatch_panics() {
         let mut c = setup_with_usdc_predecessor();
-        c.ft_on_transfer("alice.near".parse().unwrap(), U128(50), deposit_msg(100));
+        let _ = c.ft_on_transfer("alice.near".parse().unwrap(), U128(50), deposit_msg(100));
     }
 
     #[test]
@@ -127,6 +127,6 @@ mod tests {
             vec![1, 2, 3],
             vec![1, 2, 3],
         );
-        c.ft_on_transfer("alice.near".parse().unwrap(), U128(100), deposit_msg(100));
+        let _ = c.ft_on_transfer("alice.near".parse().unwrap(), U128(100), deposit_msg(100));
     }
 }
