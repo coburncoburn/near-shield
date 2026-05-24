@@ -4,3 +4,4 @@ type = "lib"
 authors = [""]
 
 [dependencies]
+poseidon = { git = "https://github.com/noir-lang/poseidon", tag = "v0.3.0" }

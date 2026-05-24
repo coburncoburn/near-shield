@@ -8,9 +8,14 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# Used during local development. WASM builds with this feature are rejected.
+# Used during local development. WASM builds with this feature are rejected
+# unless `integration-testing` is also enabled (see verifier.rs).
 default = ["unit-testing"]
 unit-testing = ["near-sdk/unit-testing"]
+# Permissive verifier for near-workspaces sandbox tests. Allowed on WASM but
+# clearly not for production. Mutually distinct from `bb-verifier` so it can
+# never silently slip into a deployable artifact.
+integration-testing = []
 # Placeholder feature for the production verifier path. It currently fails
 # closed until Barretenberg verification is wired in.
 bb-verifier = []

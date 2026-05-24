@@ -2,6 +2,15 @@
 resolver = "2"
 members = ["contract"]
 
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = "fat"
+strip = "symbols"
+panic = "abort"
+overflow-checks = false
+debug = false
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"

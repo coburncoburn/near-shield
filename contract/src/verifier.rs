@@ -11,14 +11,15 @@ pub trait Verifier {
 /// Used to drive contract-level unit tests of state transitions before the
 /// real verifier is wired in.
 ///
-/// SAFETY: WASM builds with `unit-testing` enabled are rejected below before
-/// deployment can succeed. Any deployable build must use the `bb-verifier`
-/// feature path instead.
-#[cfg(any(test, feature = "unit-testing"))]
+/// SAFETY: A deployable WASM build with `unit-testing` is rejected by the
+/// compile_error gates below. The `integration-testing` feature *deliberately*
+/// allows WASM builds with mock semantics — for sandbox tests only — and is
+/// gated separately so it can never silently slip into a production artifact.
+#[cfg(any(test, feature = "unit-testing", feature = "integration-testing"))]
 #[derive(Default)]
 pub struct MockVerifier;
 
-#[cfg(any(test, feature = "unit-testing"))]
+#[cfg(any(test, feature = "unit-testing", feature = "integration-testing"))]
 impl Verifier for MockVerifier {
     fn verify(&self, proof: &[u8], _public_inputs: &[Field]) -> bool {
         !proof.is_empty()
@@ -27,37 +28,54 @@ impl Verifier for MockVerifier {
 
 /// Production verifier placeholder. Until this is wired to Barretenberg, it
 /// rejects every proof so a `bb-verifier` build is not forgeable by accident.
-#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+#[cfg(all(
+    feature = "bb-verifier",
+    not(feature = "unit-testing"),
+    not(feature = "integration-testing")
+))]
 #[derive(Default)]
 pub struct BbVerifier;
 
-#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+#[cfg(all(
+    feature = "bb-verifier",
+    not(feature = "unit-testing"),
+    not(feature = "integration-testing")
+))]
 impl Verifier for BbVerifier {
     fn verify(&self, _proof: &[u8], _public_inputs: &[Field]) -> bool {
         false
     }
 }
 
-#[cfg(any(test, feature = "unit-testing"))]
+#[cfg(any(test, feature = "unit-testing", feature = "integration-testing"))]
 pub type SelectedVerifier = MockVerifier;
 
-#[cfg(all(feature = "bb-verifier", not(feature = "unit-testing")))]
+#[cfg(all(
+    feature = "bb-verifier",
+    not(feature = "unit-testing"),
+    not(feature = "integration-testing")
+))]
 pub type SelectedVerifier = BbVerifier;
 
 // Compile-time checks reject deployable builds that would use mock verifier
-// semantics or omit the real verifier feature.
+// semantics or omit the real verifier feature. `integration-testing` is
+// exempted from the unit-testing reject because near-workspaces sandbox tests
+// need a WASM build with permissive verification.
 #[cfg(all(
     target_family = "wasm",
-    feature = "unit-testing"
+    feature = "unit-testing",
+    not(feature = "integration-testing")
 ))]
 compile_error!(
     "WASM contract builds must disable `unit-testing`. \
-     Run: `cargo near build --no-default-features --features bb-verifier`"
+     For sandbox integration tests use `--features integration-testing` instead. \
+     For deployment use `--no-default-features --features bb-verifier`."
 );
 
 #[cfg(all(
     target_family = "wasm",
     not(feature = "unit-testing"),
+    not(feature = "integration-testing"),
     not(feature = "bb-verifier")
 ))]
 compile_error!(

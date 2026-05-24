@@ -1,13 +1,10 @@
 // Shielded pool -- shared circuit primitives.
 //
-// IMPORTANT: This implementation uses Noir stdlib's Pedersen hash for
-// commitments, nullifiers, AND Merkle tree hashing. The Rust contract and
-// TypeScript SDK currently use Poseidon2 via light-poseidon (circom params).
-// Aligning the hash function across all three layers is a known unfinished
-// task (referenced in the spec's "open questions deferred to plan phase" --
-// the alignment work converges on a single Poseidon2 implementation in a
-// follow-up commit). The structure of the circuits below is correct; only
-// the specific hash invocation must converge.
+// Hashing is aligned with the Rust contract (`light-poseidon::new_circom`) and
+// TypeScript SDK (`poseidon-lite`): BN254 Poseidon with Circom-compatible
+// parameters. The helpers are named by arity, not by Poseidon2-the-permutation.
+
+use poseidon::poseidon::bn254;
 
 pub struct Note {
     pub amount: Field,
@@ -17,23 +14,31 @@ pub struct Note {
 }
 
 pub fn commit_note(note: Note) -> Field {
-    std::hash::pedersen_hash([
+    poseidon4(
         note.amount,
         note.owner_pubkey,
         note.auditor_pubkey,
         note.blinding,
-    ])
+    )
 }
 
 pub fn nullifier_of(spending_key: Field, commitment: Field, leaf_index: Field) -> Field {
-    std::hash::pedersen_hash([
+    poseidon2(
         spending_key,
-        std::hash::pedersen_hash([commitment, leaf_index]),
-    ])
+        poseidon2(commitment, leaf_index),
+    )
 }
 
 pub fn owner_pubkey_of(spending_key: Field) -> Field {
-    std::hash::pedersen_hash([spending_key, 0])
+    poseidon2(spending_key, 0)
+}
+
+pub fn poseidon2(a: Field, b: Field) -> Field {
+    bn254::hash_2([a, b])
+}
+
+pub fn poseidon4(a: Field, b: Field, c: Field, d: Field) -> Field {
+    bn254::hash_4([a, b, c, d])
 }
 
 /// Verifies a Merkle inclusion proof: that `leaf` is at `leaf_index` in a tree
@@ -58,7 +63,7 @@ pub fn verify_merkle_proof<let DEPTH: u32>(
         } else {
             (current, sibling)
         };
-        current = std::hash::pedersen_hash([l, r]);
+        current = poseidon2(l, r);
     }
     assert(current == root);
 }
@@ -68,6 +73,20 @@ fn commit_note_is_deterministic() {
     let note = Note { amount: 1, owner_pubkey: 2, auditor_pubkey: 3, blinding: 4 };
     let note2 = Note { amount: 1, owner_pubkey: 2, auditor_pubkey: 3, blinding: 4 };
     assert(commit_note(note) == commit_note(note2));
+}
+
+#[test]
+fn poseidon2_matches_cross_language_vector() {
+    assert(
+        poseidon2(1, 2) == 0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a
+    );
+}
+
+#[test]
+fn poseidon4_matches_cross_language_vector() {
+    assert(
+        poseidon4(1, 2, 3, 4) == 0x299c867db6c1fdd79dcefa40e4510b9837e60ebb1ce0663dbaa525df65250465
+    );
 }
 
 #[test]
@@ -108,9 +127,9 @@ fn merkle_proof_verifies_depth_2_leaf_0() {
     let l1: Field = 20;
     let l2: Field = 30;
     let l3: Field = 40;
-    let h01 = std::hash::pedersen_hash([l0, l1]);
-    let h23 = std::hash::pedersen_hash([l2, l3]);
-    let root = std::hash::pedersen_hash([h01, h23]);
+    let h01 = poseidon2(l0, l1);
+    let h23 = poseidon2(l2, l3);
+    let root = poseidon2(h01, h23);
     let path: [Field; 2] = [l1, h23];
     verify_merkle_proof(root, l0, 0, path);
 }
@@ -121,9 +140,9 @@ fn merkle_proof_verifies_depth_2_leaf_3() {
     let l1: Field = 20;
     let l2: Field = 30;
     let l3: Field = 40;
-    let h01 = std::hash::pedersen_hash([l0, l1]);
-    let h23 = std::hash::pedersen_hash([l2, l3]);
-    let root = std::hash::pedersen_hash([h01, h23]);
+    let h01 = poseidon2(l0, l1);
+    let h23 = poseidon2(l2, l3);
+    let root = poseidon2(h01, h23);
     // leaf_index = 3 = 0b11; sibling at level 0 is l2, at level 1 is h01.
     let path: [Field; 2] = [l2, h01];
     verify_merkle_proof(root, l3, 3, path);
@@ -135,9 +154,9 @@ fn merkle_proof_with_wrong_sibling_fails() {
     let l1: Field = 20;
     let l2: Field = 30;
     let l3: Field = 40;
-    let h01 = std::hash::pedersen_hash([l0, l1]);
-    let h23 = std::hash::pedersen_hash([l2, l3]);
-    let root = std::hash::pedersen_hash([h01, h23]);
+    let h01 = poseidon2(l0, l1);
+    let h23 = poseidon2(l2, l3);
+    let root = poseidon2(h01, h23);
     let bad_path: [Field; 2] = [l2, h23]; // wrong: level-0 sibling should be l1
     verify_merkle_proof(root, l0, 0, bad_path);
 }

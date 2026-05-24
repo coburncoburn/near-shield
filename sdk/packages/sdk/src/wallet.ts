@@ -237,6 +237,7 @@ export class Wallet {
     return {
       method: "withdraw",
       publicInputs: {
+        merkleRoot: "",
         nullifier: nullifier.toHex(),
         recipient: req.recipientNearAccount,
         amount: req.amount.toString(),
