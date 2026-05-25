@@ -1,15 +1,11 @@
-use shielded_shared::{commit_note, nullifier_of, owner_pubkey_of, Note};
+use shielded_shared::{
+    commit_note, nullifier_of, owner_pubkey_of, verify_merkle_proof, Note, MERKLE_DEPTH,
+};
 
 // withdraw.nr - proves a single note is being spent and paid out.
 //
 // Whole-note withdraw in v0: note.amount must equal the public `amount`.
 // v1 can add a change output.
-//
-// Merkle inclusion is proved out-of-circuit in v0 (the contract checks the
-// public `merkle_root` against its rolling window). A proper v0.1 will add an
-// in-circuit Merkle proof here; for now the auditor binding and value binding
-// are enforced by the circuit while inclusion is socially enforced by the
-// contract requiring a *recent* root.
 fn main(
     merkle_root: pub Field,
     nullifier: pub Field,
@@ -25,10 +21,10 @@ fn main(
     note_blinding: Field,
     spending_key: Field,
     leaf_index: Field,
+    merkle_path: [Field; MERKLE_DEPTH],
     view_ct_hash_witness: Field,
-    merkle_root_witness: Field,
 ) {
-    // Public inputs always referenced (so unused-input optimizations don't strip them).
+    // Public inputs always referenced so they aren't optimised out.
     assert(recipient == recipient);
     assert(relayer == relayer);
 
@@ -46,20 +42,43 @@ fn main(
     // Nullifier correctness.
     assert(nullifier_of(spending_key, commitment, leaf_index) == nullifier);
 
-    // Whole-note withdraw: amounts must match.
+    // Whole-note withdraw.
     assert(note.amount == amount);
 
-    // Auditor binding: input note's auditor must equal the disclosed auditor.
+    // Auditor binding.
     assert(note.auditor_pubkey == auditor_pubkey);
 
-    // Fee is bounded by the amount (also checked on-chain, but bind here too).
+    // Fee bounded by amount.
     assert(amount as u64 >= relayer_fee as u64);
 
-    // View ciphertext hash binding (sponge over ciphertext bytes hashed off-circuit).
+    // View ciphertext hash binding.
     assert(view_ct_hash == view_ct_hash_witness);
 
-    // Merkle root binding (full inclusion proof deferred).
-    assert(merkle_root == merkle_root_witness);
+    // Real Merkle inclusion: prove the committed note actually exists in the
+    // tree whose root is `merkle_root`. This is the soundness step that
+    // distinguishes "the prover knows a valid commitment" from "the prover
+    // knows a commitment that was actually deposited."
+    verify_merkle_proof(merkle_root, commitment, leaf_index, merkle_path);
+}
+
+// ----- test helpers -----
+
+use shielded_shared::poseidon2;
+
+/// Builds a depth-4 path + root for a single leaf at index 0, with the rest of
+/// the tree empty (zero leaves). Returns (root, path).
+fn empty_path_for_leaf_at_zero<let N: u32>(leaf: Field) -> (Field, [Field; N]) {
+    let mut z: Field = 0;
+    let mut zeros: [Field; N] = [0; N];
+    for level in 0..N {
+        zeros[level] = z;
+        z = poseidon2(z, z);
+    }
+    let mut current = leaf;
+    for level in 0..N {
+        current = poseidon2(current, zeros[level]);
+    }
+    (current, zeros)
 }
 
 #[test]
@@ -71,25 +90,13 @@ fn honest_withdrawal_proves() {
     let amount: Field = 100;
     let note = Note { amount, owner_pubkey: owner, auditor_pubkey: auditor, blinding };
     let c = commit_note(note);
-    let leaf = 0;
-    let n = nullifier_of(sk, c, leaf);
+    let leaf_index: Field = 0;
+    let n = nullifier_of(sk, c, leaf_index);
+    let (root, path) = empty_path_for_leaf_at_zero::<MERKLE_DEPTH>(c);
     main(
-        42, // merkle_root (any value, also passed as witness)
-        n,
-        99, // recipient
-        amount,
-        77, // relayer
-        5,  // relayer_fee
-        auditor,
-        13, // view_ct_hash
-        amount,
-        owner,
-        auditor,
-        blinding,
-        sk,
-        leaf,
-        13,
-        42,
+        root, n, 99, amount, 77, 5, auditor, 13,
+        amount, owner, auditor, blinding,
+        sk, leaf_index, path, 13,
     );
 }
 
@@ -102,26 +109,14 @@ fn wrong_spending_key_fails() {
     let amount: Field = 100;
     let note = Note { amount, owner_pubkey: owner, auditor_pubkey: auditor, blinding };
     let c = commit_note(note);
-    let leaf = 0;
-    let n = nullifier_of(real_sk, c, leaf);
+    let leaf_index: Field = 0;
+    let n = nullifier_of(real_sk, c, leaf_index);
+    let (root, path) = empty_path_for_leaf_at_zero::<MERKLE_DEPTH>(c);
     let wrong_sk: Field = 8;
     main(
-        42,
-        n,
-        99,
-        amount,
-        77,
-        5,
-        auditor,
-        13,
-        amount,
-        owner,
-        auditor,
-        blinding,
-        wrong_sk,
-        leaf,
-        13,
-        42,
+        root, n, 99, amount, 77, 5, auditor, 13,
+        amount, owner, auditor, blinding,
+        wrong_sk, leaf_index, path, 13,
     );
 }
 
@@ -131,9 +126,14 @@ fn wrong_amount_fails() {
     let owner = owner_pubkey_of(sk);
     let note = Note { amount: 100, owner_pubkey: owner, auditor_pubkey: 1, blinding: 1 };
     let c = commit_note(note);
-    let leaf = 0;
-    let n = nullifier_of(sk, c, leaf);
-    main(42, n, 99, 200, 77, 5, 1, 13, 100, owner, 1, 1, sk, leaf, 13, 42);
+    let leaf_index: Field = 0;
+    let n = nullifier_of(sk, c, leaf_index);
+    let (root, path) = empty_path_for_leaf_at_zero::<MERKLE_DEPTH>(c);
+    main(
+        root, n, 99, 200, 77, 5, 1, 13,
+        100, owner, 1, 1,
+        sk, leaf_index, path, 13,
+    );
 }
 
 #[test(should_fail)]
@@ -142,8 +142,32 @@ fn auditor_mismatch_fails() {
     let owner = owner_pubkey_of(sk);
     let note = Note { amount: 100, owner_pubkey: owner, auditor_pubkey: 22, blinding: 1 };
     let c = commit_note(note);
-    let leaf = 0;
-    let n = nullifier_of(sk, c, leaf);
-    // Public auditor pubkey is 99 but note's is 22.
-    main(42, n, 99, 100, 77, 5, 99, 13, 100, owner, 22, 1, sk, leaf, 13, 42);
+    let leaf_index: Field = 0;
+    let n = nullifier_of(sk, c, leaf_index);
+    let (root, path) = empty_path_for_leaf_at_zero::<MERKLE_DEPTH>(c);
+    main(
+        root, n, 99, 100, 77, 5, 99, 13,
+        100, owner, 22, 1,
+        sk, leaf_index, path, 13,
+    );
+}
+
+#[test(should_fail)]
+fn forged_merkle_path_fails() {
+    // The honest commitment is `c`, but we pass an unrelated commitment's
+    // path. The Merkle check must reject this.
+    let sk: Field = 7;
+    let owner = owner_pubkey_of(sk);
+    let note = Note { amount: 100, owner_pubkey: owner, auditor_pubkey: 22, blinding: 1 };
+    let c = commit_note(note);
+    let leaf_index: Field = 0;
+    let n = nullifier_of(sk, c, leaf_index);
+    // Build a path/root for a DIFFERENT leaf, then claim our `c` is in it.
+    let fake_leaf: Field = 999;
+    let (fake_root, fake_path) = empty_path_for_leaf_at_zero::<MERKLE_DEPTH>(fake_leaf);
+    main(
+        fake_root, n, 99, 100, 77, 5, 22, 13,
+        100, owner, 22, 1,
+        sk, leaf_index, fake_path, 13,
+    );
 }

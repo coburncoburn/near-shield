@@ -2,6 +2,7 @@ export const VERSION = "0.1.0";
 
 export { Field, BN254_MODULUS } from "./field.js";
 export { poseidon2, poseidon4 } from "./poseidon.js";
+export { hashBytesToField } from "./hash_bytes.js";
 export { commitNote, computeNullifier, type Note } from "./note.js";
 export {
   decodeDisclosure,

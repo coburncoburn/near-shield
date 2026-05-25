@@ -1,4 +1,5 @@
 use crate::poseidon::Field;
+use crate::storage::{require_storage_deposit, DEPOSIT_BYTES};
 use crate::verifier::{SelectedVerifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -13,7 +14,18 @@ pub(crate) fn parse_hex32(s: &str) -> Option<Field> {
     Some(Field::from_be_bytes(&bytes))
 }
 
-pub(crate) fn hash_bytes_to_field(b: &[u8]) -> Field {
+/// Reduces an arbitrary byte string to a single Field. This is the canonical
+/// construction for binding opaque ciphertexts (view_ct, note_ct) into proof
+/// public inputs. The TypeScript SDK MUST implement the same construction
+/// (cross-language vectors live in `sdk/test-vectors/view_ct_hash.json`).
+///
+/// Algorithm:
+///   1. Split bytes into 31-byte chunks (last chunk zero-padded).
+///   2. Each chunk -> Field via little-endian byte interpretation.
+///   3. Empty input -> Field::zero().
+///   4. Single chunk -> that chunk.
+///   5. Multiple chunks -> linear Poseidon-2 fold: acc = poseidon2(acc, next).
+pub fn hash_bytes_to_field(b: &[u8]) -> Field {
     use light_poseidon::{Poseidon, PoseidonHasher};
     let chunks: Vec<Field> = b.chunks(31).map(|c| Field::from_bytes_le(c)).collect();
     if chunks.is_empty() {
@@ -72,7 +84,11 @@ impl Contract {
 impl Contract {
     /// Direct deposit (no FT transfer). Used by tests and by future variants
     /// where the contract is funded out-of-band. The production deposit path
-    /// is `ft_on_transfer` in `ft.rs`.
+    /// is `ft_on_transfer` in `ft.rs`, which calls `do_deposit` directly
+    /// because the FT-callback context doesn't carry the caller's
+    /// attached_deposit (storage is amortised by the FT layer's own deposit
+    /// requirement).
+    #[payable]
     pub fn deposit(
         &mut self,
         commitment: String,
@@ -82,6 +98,7 @@ impl Contract {
         note_ct: String,
         proof: Vec<u8>,
     ) {
+        require_storage_deposit(DEPOSIT_BYTES);
         self.do_deposit(DepositArgs {
             commitment,
             amount,
@@ -112,7 +129,8 @@ mod tests {
 
     fn setup() -> Contract {
         let mut ctx = VMContextBuilder::new();
-        ctx.predecessor_account_id(alice());
+        ctx.predecessor_account_id(alice())
+            .attached_deposit(near_sdk::NearToken::from_near(1));
         testing_env!(ctx.build());
         Contract::new(
             owner(),
@@ -125,6 +143,27 @@ mod tests {
 
     fn hex32(byte: u8) -> String {
         format!("0x{}", hex::encode([byte; 32]))
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_view_ct_hash_vectors() {
+        // Run with: cargo test -p shielded-pool --lib deposit::tests::dump_view_ct_hash_vectors -- --ignored --nocapture
+        let cases: &[(&str, &[u8])] = &[
+            ("empty", b""),
+            ("a", b"a"),
+            ("hello", b"hello"),
+            ("viewct", b"viewct"),
+            (
+                "long_62_bytes",
+                b"this is a longer string that exceeds 31 bytes for chunking",
+            ),
+            ("31_zeros", &[0u8; 31]),
+            ("62_ff", &[0xffu8; 62]),
+        ];
+        for (name, bytes) in cases {
+            println!("{}={}", name, super::hash_bytes_to_field(bytes).to_hex());
+        }
     }
 
     #[test]

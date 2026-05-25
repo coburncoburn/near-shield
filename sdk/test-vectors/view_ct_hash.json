@@ -1,0 +1,40 @@
+{
+  "_comment": "hash_bytes_to_field vectors. Source of truth: contract/src/deposit.rs::hash_bytes_to_field. TS implementation in sdk/packages/core/src/hash_bytes.ts MUST match.",
+  "cases": [
+    {
+      "name": "empty",
+      "input_b64": "",
+      "expected": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "a",
+      "input_b64": "YQ==",
+      "expected": "0x0000000000000000000000000000000000000000000000000000000000000061"
+    },
+    {
+      "name": "hello",
+      "input_b64": "aGVsbG8=",
+      "expected": "0x0000000000000000000000000000000000000000000000000000006f6c6c6568"
+    },
+    {
+      "name": "viewct",
+      "input_b64": "dmlld2N0",
+      "expected": "0x0000000000000000000000000000000000000000000000000000746377656976"
+    },
+    {
+      "name": "long_62_bytes",
+      "input_b64": "dGhpcyBpcyBhIGxvbmdlciBzdHJpbmcgdGhhdCBleGNlZWRzIDMxIGJ5dGVzIGZvciBjaHVua2luZw==",
+      "expected": "0x2ad0da79085dfcf192c6df68ea04d4ed0793fdcbf282c3e0d38b87860a28e374"
+    },
+    {
+      "name": "31_zeros",
+      "input_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "expected": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "62_ff",
+      "input_b64": "//////////////////////////////////////////////////////////////////////////////////8=",
+      "expected": "0x1552386d52e7165e420cd28334d90cb566fbe817579b19784faa8d774cd2a76f"
+    }
+  ]
+}

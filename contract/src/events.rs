@@ -41,6 +41,17 @@ pub fn emit_transfer(
     );
 }
 
+pub fn emit_payout_recovered(recipient: &str, amount: u128) {
+    near_sdk::env::log_str(
+        &near_sdk::serde_json::json!({
+            "standard": "shielded-pool",
+            "event": "payout_recovered",
+            "data": { "recipient": recipient, "amount": amount.to_string() }
+        })
+        .to_string(),
+    );
+}
+
 pub fn emit_withdraw(
     nullifier: &str,
     recipient: &str,

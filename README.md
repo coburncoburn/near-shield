@@ -6,10 +6,10 @@ See [`docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md`](docs/supe
 
 ## Status: PROTOTYPE -- NOT SAFE TO DEPLOY WITH FUNDS
 
-Two cryptographic preconditions are not yet met. Until both are fixed, deployment to any chain handling real value would result in **trivially forgeable proofs** and **circuits that prove the wrong commitments**:
+One critical cryptographic precondition is not yet met. Until it is fixed, deployment to any chain handling real value would result in **trivially forgeable proofs**:
 
 1. **Real verifier not integrated.** Host-side tests use `MockVerifier`, which accepts any non-empty proof. WASM builds with the default `unit-testing` feature are rejected, and `--no-default-features --features bb-verifier` selects a fail-closed placeholder that rejects every proof until Barretenberg verification is wired in.
-2. **Hash function mismatch across layers.** Rust contract and TypeScript SDK use Poseidon2 (`light-poseidon` circom params). Noir circuits currently use Pedersen (see `circuits/shared/src/lib.nr`). The three layers must converge on the same Poseidon2 implementation before commitments and nullifiers agree end-to-end.
+2. **Hashing is aligned.** Rust contract, TypeScript SDK, and Noir circuits now use BN254 Poseidon with Circom-compatible parameters for commitments, nullifiers, owner pubkeys, and Merkle hashing. Cross-language vectors are locked in `sdk/test-vectors/poseidon.json` and mirrored by Noir tests in `circuits/shared/src/lib.nr`.
 
 ## Layout
 
@@ -23,8 +23,8 @@ Two cryptographic preconditions are not yet met. Until both are fixed, deploymen
 ## Test status
 
 - `cargo test -p shielded-pool --lib` -- 40 tests (state, methods, FT integration, mock verifier dispatch)
-- `nargo test --workspace` (in `circuits/`) -- 18 tests (commitment, nullifier, Merkle proof, circuit constraints)
-- `pnpm -r test` -- core 29, sdk 11, auditor 7, relayer 6 = 53 tests
+- `nargo test --workspace` (in `circuits/`) -- 20 tests (commitment, nullifier, Merkle proof, circuit constraints, Poseidon vectors)
+- `pnpm -r test` -- core 29, sdk 18, auditor 7, relayer 6 = 60 tests
 - `tools/superpowers-validate` -- 16 tests against the installed superpowers framework
 
 CI runs all of the above on every push (`.github/workflows/ci.yml`).

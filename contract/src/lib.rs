@@ -1,3 +1,4 @@
+use near_sdk::store::LookupMap;
 use near_sdk::{near, AccountId, PanicOnDefault};
 
 pub mod deposit;
@@ -7,6 +8,7 @@ pub mod merkle;
 pub mod nullifiers;
 pub mod poseidon;
 pub mod roots;
+pub mod storage;
 pub mod transfer;
 pub mod verifier;
 pub mod withdraw;
@@ -29,6 +31,9 @@ pub struct Contract {
     pub vk_deposit: Vec<u8>,
     pub vk_transfer: Vec<u8>,
     pub vk_withdraw: Vec<u8>,
+    /// Recovery book: USDC owed to accounts whose `ft_transfer` failed during
+    /// a withdrawal. Claimable via `claim()`.
+    pub unclaimed_payouts: LookupMap<AccountId, u128>,
 }
 
 #[near]
@@ -50,6 +55,7 @@ impl Contract {
             vk_deposit,
             vk_transfer,
             vk_withdraw,
+            unclaimed_payouts: LookupMap::new(b"u"),
         }
     }
 

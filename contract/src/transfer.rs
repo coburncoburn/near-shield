@@ -1,5 +1,6 @@
 use crate::deposit::{hash_bytes_to_field, parse_hex32};
 use crate::poseidon::Field;
+use crate::storage::{require_storage_deposit, TRANSFER_BYTES};
 use crate::verifier::{SelectedVerifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::near;
@@ -8,6 +9,7 @@ use near_sdk::near;
 impl Contract {
     /// Spends two input notes (by their nullifiers) and produces two output
     /// notes (by their commitments), all inside the shielded pool.
+    #[payable]
     pub fn transfer(
         &mut self,
         merkle_root: String,
@@ -19,6 +21,8 @@ impl Contract {
         note_cts: [String; 2],
         proof: Vec<u8>,
     ) {
+        require_storage_deposit(TRANSFER_BYTES);
+
         let root = parse_hex32(&merkle_root).expect("bad root hex");
         assert!(self.recent_roots.contains(&root), "stale root");
 
@@ -77,7 +81,9 @@ mod tests {
     use near_sdk::AccountId;
 
     fn setup() -> Contract {
-        testing_env!(VMContextBuilder::new().build());
+        let mut ctx = VMContextBuilder::new();
+        ctx.attached_deposit(near_sdk::NearToken::from_near(1));
+        testing_env!(ctx.build());
         Contract::new(
             "owner.near".parse::<AccountId>().unwrap(),
             "usdc.near".parse::<AccountId>().unwrap(),
