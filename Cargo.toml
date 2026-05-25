@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contract"]
+members = ["contract", "tools/prover"]
 
 [profile.release]
 codegen-units = 1

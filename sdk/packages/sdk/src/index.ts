@@ -7,6 +7,12 @@ export {
   type WithdrawRequest,
 } from "./wallet.js";
 export {
+  StubProver,
+  SubprocessProver,
+  type Prover,
+  type ProveRequest,
+} from "./prover.js";
+export {
   toDepositArgs,
   toFtTransferCallArgs,
   toTransferArgs,

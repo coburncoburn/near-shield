@@ -16,6 +16,8 @@ import {
   type ViewDisclosure,
 } from "@shielded-near/core";
 
+import { StubProver, type Prover } from "./prover.js";
+
 export interface WalletConfig {
   /** Seed bytes (e.g. NEAR-wallet-sign-in-derived). Used to derive sk and vk. */
   seed: Uint8Array;
@@ -23,6 +25,13 @@ export interface WalletConfig {
   usdcTokenAccountId: string;
   /** The shielded pool contract account id. */
   poolAccountId: string;
+  /**
+   * The Groth16 prover. Production deployments inject a `SubprocessProver`
+   * pointing at a real prover binary; tests use the default `StubProver`
+   * which emits a one-byte placeholder (only accepted by mock-verifier
+   * contract builds).
+   */
+  prover?: Prover;
 }
 
 export interface DepositRequest {
@@ -68,12 +77,14 @@ export class Wallet {
   readonly spendingKey: Field;
   readonly ownerPubkey: Field;
   readonly viewingKey: KeyPair;
+  readonly prover: Prover;
   private notes: DiscoveredNote[] = [];
 
   constructor(private readonly config: WalletConfig) {
     if (config.seed.length < 32) {
       throw new Error("seed must be >= 32 bytes");
     }
+    this.prover = config.prover ?? new StubProver();
     // Derive sk and vk deterministically from the seed.
     this.spendingKey = Field.fromHex(
       "0x" + Array.from(config.seed.slice(0, 32)).map((b) => b.toString(16).padStart(2, "0")).join("")

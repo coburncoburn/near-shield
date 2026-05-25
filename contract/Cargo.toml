@@ -37,3 +37,11 @@ hex = { version = "0.4", default-features = false, features = ["alloc"] }
 near-workspaces = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+ark-groth16 = { version = "0.4", default-features = false }
+ark-snark = { version = "0.4", default-features = false }
+ark-relations = { version = "0.4", default-features = false }
+ark-r1cs-std = { version = "0.4", default-features = false }
+ark-ec = { version = "0.4", default-features = false }
+ark-serialize = { version = "0.4", default-features = false }
+ark-std = { version = "0.4", default-features = false, features = ["std"] }
+ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
