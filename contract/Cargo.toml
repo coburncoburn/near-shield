@@ -25,10 +25,10 @@ near-sdk = { workspace = true }
 borsh = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-light-poseidon = "0.2"
-ark-bn254 = "0.4"
-ark-ff = "0.4"
-hex = "0.4"
+light-poseidon = { version = "0.2", default-features = false }
+ark-bn254 = { version = "0.4", default-features = false, features = ["scalar_field"] }
+ark-ff = { version = "0.4", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 near-workspaces = { workspace = true }

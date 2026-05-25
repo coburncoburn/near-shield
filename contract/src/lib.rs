@@ -10,6 +10,7 @@ pub mod poseidon;
 pub mod roots;
 pub mod storage;
 pub mod transfer;
+pub mod validation;
 pub mod verifier;
 pub mod withdraw;
 

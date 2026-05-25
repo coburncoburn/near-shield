@@ -26,17 +26,22 @@ impl Contract {
         relayer_fee: U128,
         proof: Vec<u8>,
     ) {
+        use crate::validation::{
+            check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
+        };
         require_storage_deposit(WITHDRAW_BYTES);
+        check_proof_bytes(&proof);
+        check_ciphertext_bytes(&view_ct, "view_ct");
 
-        assert!(relayer_fee.0 <= amount.0, "fee exceeds amount");
+        require!(relayer_fee.0 <= amount.0, "fee exceeds amount");
 
-        let root = parse_hex32(&merkle_root).expect("bad root hex");
-        assert!(self.recent_roots.contains(&root), "stale root");
+        let root = parse_hex32_or_panic(&merkle_root, "merkle_root");
+        require!(self.recent_roots.contains(&root), "stale root");
 
-        let n = parse_hex32(&nullifier).expect("bad nullifier hex");
-        assert!(!self.nullifiers.contains(&n), "double spend");
+        let n = parse_hex32_or_panic(&nullifier, "nullifier");
+        require!(!self.nullifiers.contains(&n), "double spend");
 
-        let ap = parse_hex32(&auditor_pubkey).expect("bad auditor pubkey");
+        let ap = parse_hex32_or_panic(&auditor_pubkey, "auditor_pubkey");
 
         let pi = [
             root,
@@ -228,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid proof")]
+    #[should_panic(expected = "proof: must not be empty")]
     fn withdraw_with_empty_proof_rejects() {
         let mut c = setup();
         let root = seed_root(&mut c, 7);

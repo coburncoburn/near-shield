@@ -21,21 +21,31 @@ impl Contract {
         note_cts: [String; 2],
         proof: Vec<u8>,
     ) {
+        use crate::validation::{
+            check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
+        };
         require_storage_deposit(TRANSFER_BYTES);
+        check_proof_bytes(&proof);
+        for (i, v) in view_cts.iter().enumerate() {
+            check_ciphertext_bytes(v, &format!("view_cts[{i}]"));
+        }
+        for (i, n) in note_cts.iter().enumerate() {
+            check_ciphertext_bytes(n, &format!("note_cts[{i}]"));
+        }
 
-        let root = parse_hex32(&merkle_root).expect("bad root hex");
+        let root = parse_hex32_or_panic(&merkle_root, "merkle_root");
         assert!(self.recent_roots.contains(&root), "stale root");
 
-        let n0 = parse_hex32(&nullifiers[0]).expect("bad nullifier 0");
-        let n1 = parse_hex32(&nullifiers[1]).expect("bad nullifier 1");
+        let n0 = parse_hex32_or_panic(&nullifiers[0], "nullifiers[0]");
+        let n1 = parse_hex32_or_panic(&nullifiers[1], "nullifiers[1]");
         assert_ne!(n0, n1, "nullifiers must differ");
         assert!(!self.nullifiers.contains(&n0), "double spend");
         assert!(!self.nullifiers.contains(&n1), "double spend");
 
-        let c0 = parse_hex32(&commitments[0]).expect("bad commitment 0");
-        let c1 = parse_hex32(&commitments[1]).expect("bad commitment 1");
-        let ap = parse_hex32(&auditor_pubkey).expect("bad auditor pubkey");
-        let rap = parse_hex32(&recipient_auditor_pubkey).expect("bad recipient auditor pubkey");
+        let c0 = parse_hex32_or_panic(&commitments[0], "commitments[0]");
+        let c1 = parse_hex32_or_panic(&commitments[1], "commitments[1]");
+        let ap = parse_hex32_or_panic(&auditor_pubkey, "auditor_pubkey");
+        let rap = parse_hex32_or_panic(&recipient_auditor_pubkey, "recipient_auditor_pubkey");
 
         let pi = [
             root,

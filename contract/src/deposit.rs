@@ -5,7 +5,7 @@ use crate::{events, Contract, ContractExt};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{json_types::U128, near};
 
-pub(crate) fn parse_hex32(s: &str) -> Option<Field> {
+pub fn parse_hex32(s: &str) -> Option<Field> {
     let trimmed = s.trim_start_matches("0x");
     if trimmed.len() != 64 {
         return None;
@@ -60,8 +60,14 @@ impl Contract {
     /// entry (kept for unit tests) and by `ft_on_transfer` (the production
     /// path that requires real USDC to have been transferred in).
     pub(crate) fn do_deposit(&mut self, args: DepositArgs) {
-        let commitment_field = parse_hex32(&args.commitment).expect("bad commitment hex");
-        let auditor_field = parse_hex32(&args.auditor_pubkey).expect("bad auditor hex");
+        use crate::validation::{
+            check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
+        };
+        check_proof_bytes(&args.proof);
+        check_ciphertext_bytes(&args.view_ct, "view_ct");
+        check_ciphertext_bytes(&args.note_ct, "note_ct");
+        let commitment_field = parse_hex32_or_panic(&args.commitment, "commitment");
+        let auditor_field = parse_hex32_or_panic(&args.auditor_pubkey, "auditor_pubkey");
 
         let pi = [
             commitment_field,
@@ -182,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid proof")]
+    #[should_panic(expected = "proof: must not be empty")]
     fn deposit_with_empty_proof_rejects() {
         let mut c = setup();
         c.deposit(
@@ -196,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "bad commitment hex")]
+    #[should_panic(expected = "commitment: must be '0x' + 64 hex chars")]
     fn deposit_rejects_malformed_commitment() {
         let mut c = setup();
         c.deposit(
