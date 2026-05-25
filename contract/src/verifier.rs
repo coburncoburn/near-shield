@@ -47,15 +47,32 @@ impl Verifier for BbVerifier {
     }
 }
 
+/// Selects the active verifier for a given verifier-key blob. The factory
+/// pattern is necessary because Groth16Verifier needs the VK at construction
+/// time, while MockVerifier and BbVerifier are stateless.
 #[cfg(any(test, feature = "unit-testing", feature = "integration-testing"))]
-pub type SelectedVerifier = MockVerifier;
+pub fn select_verifier(_vk_bytes: &[u8]) -> impl Verifier {
+    MockVerifier
+}
 
 #[cfg(all(
     feature = "bb-verifier",
     not(feature = "unit-testing"),
+    not(feature = "integration-testing"),
+    not(feature = "groth16-verifier")
+))]
+pub fn select_verifier(_vk_bytes: &[u8]) -> impl Verifier {
+    BbVerifier
+}
+
+#[cfg(all(
+    feature = "groth16-verifier",
+    not(feature = "unit-testing"),
     not(feature = "integration-testing")
 ))]
-pub type SelectedVerifier = BbVerifier;
+pub fn select_verifier(vk_bytes: &[u8]) -> impl Verifier {
+    crate::groth16::Groth16Verifier::new(vk_bytes)
+}
 
 // Compile-time checks reject deployable builds that would use mock verifier
 // semantics or omit the real verifier feature. `integration-testing` is
@@ -76,12 +93,17 @@ compile_error!(
     target_family = "wasm",
     not(feature = "unit-testing"),
     not(feature = "integration-testing"),
-    not(feature = "bb-verifier")
+    not(feature = "bb-verifier"),
+    not(feature = "groth16-verifier")
 ))]
 compile_error!(
-    "Production contract build must enable the `bb-verifier` feature. \
+    "Production contract build must enable a real verifier feature. \
      Building without a real verifier would make zk proofs trivially forgeable. \
-     Run: `cargo near build --no-default-features --features bb-verifier`"
+     Use one of: \
+     `cargo near build --no-default-features --features groth16-verifier` (recommended; \
+     uses NEAR's alt_bn128 host functions, real on-chain verification), or \
+     `cargo near build --no-default-features --features bb-verifier` (fail-closed \
+     placeholder until Barretenberg Honk is ported)."
 );
 
 #[cfg(test)]

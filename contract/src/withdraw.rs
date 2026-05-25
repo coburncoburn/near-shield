@@ -1,7 +1,7 @@
 use crate::deposit::{hash_bytes_to_field, parse_hex32};
 use crate::poseidon::Field;
 use crate::storage::{require_storage_deposit, WITHDRAW_BYTES};
-use crate::verifier::{SelectedVerifier, Verifier};
+use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::{env, json_types::U128, near, require, AccountId, Gas, Promise};
 
@@ -54,7 +54,7 @@ impl Contract {
             hash_bytes_to_field(view_ct.as_bytes()),
         ];
         assert!(
-            SelectedVerifier::default().verify(&proof, &pi),
+            select_verifier(&self.vk_withdraw).verify(&proof, &pi),
             "invalid proof"
         );
 

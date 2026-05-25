@@ -1,7 +1,7 @@
 use crate::deposit::{hash_bytes_to_field, parse_hex32};
 use crate::poseidon::Field;
 use crate::storage::{require_storage_deposit, TRANSFER_BYTES};
-use crate::verifier::{SelectedVerifier, Verifier};
+use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::near;
 
@@ -59,7 +59,7 @@ impl Contract {
             hash_bytes_to_field(view_cts[1].as_bytes()),
         ];
         assert!(
-            SelectedVerifier::default().verify(&proof, &pi),
+            select_verifier(&self.vk_transfer).verify(&proof, &pi),
             "invalid proof"
         );
 

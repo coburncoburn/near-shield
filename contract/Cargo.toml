@@ -19,6 +19,9 @@ integration-testing = []
 # Placeholder feature for the production verifier path. It currently fails
 # closed until Barretenberg verification is wired in.
 bb-verifier = []
+# Real Groth16 verifier using NEAR's alt_bn128 host functions. Mutually
+# exclusive with bb-verifier; either can be the deployable verifier.
+groth16-verifier = []
 
 [dependencies]
 near-sdk = { workspace = true }

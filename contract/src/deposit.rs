@@ -1,6 +1,6 @@
 use crate::poseidon::Field;
 use crate::storage::{require_storage_deposit, DEPOSIT_BYTES};
-use crate::verifier::{SelectedVerifier, Verifier};
+use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{json_types::U128, near};
@@ -76,7 +76,7 @@ impl Contract {
             hash_bytes_to_field(args.view_ct.as_bytes()),
         ];
         assert!(
-            SelectedVerifier::default().verify(&args.proof, &pi),
+            select_verifier(&self.vk_deposit).verify(&args.proof, &pi),
             "invalid proof"
         );
 

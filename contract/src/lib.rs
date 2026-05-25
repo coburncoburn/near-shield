@@ -9,6 +9,7 @@ pub mod nullifiers;
 pub mod poseidon;
 pub mod roots;
 pub mod storage;
+pub mod groth16;
 pub mod transfer;
 pub mod validation;
 pub mod verifier;
