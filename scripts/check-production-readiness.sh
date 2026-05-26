@@ -88,43 +88,31 @@ else
   fi
 fi
 
-PROVER="${PROVER:-target/release/shielded-prover}"
-if [[ ! -x "$PROVER" ]]; then
-  add_failure "missing executable prover at $PROVER. Build it with: cargo build -p shielded-prover --release"
-fi
+cargo build -q -p shielded-prover --release
+PROVER="$ROOT/target/release/shielded-prover"
+KEY_DIR="$ROOT/target/sp-keys"
+mkdir -p "$KEY_DIR"
+"$PROVER" setup --out-dir "$KEY_DIR"
+pass_step "prover built and circuit keys generated"
 
-check_prover_circuit() {
-  local circuit="$1"
-  if [[ ! -x "$PROVER" ]]; then
-    return
+_prover_failures=0
+for c in deposit transfer withdraw; do
+  fixture="$ROOT/tools/prover/fixtures/${c}.json"
+  if [[ ! -f "$fixture" ]]; then
+    add_failure "missing prover fixture at $fixture"
+    _prover_failures=$((_prover_failures + 1))
+    continue
   fi
-  local req
-  req="$(node -e "console.log(JSON.stringify({circuit:'${circuit}',publicInputs:['0x'+'00'.repeat(32)],witness:{}}))")"
-  local out
-  local err
-  out="$(mktemp)"
-  err="$(mktemp)"
-  if ! printf '%s' "$req" | "$PROVER" >"$out" 2>"$err"; then
-    add_failure "prover cannot generate a ${circuit} proof.
-
-stderr:
-$(cat "$err")
-
-Production requires real proofs for deposit, transfer, and withdraw."
-    return
+  n="$(PROVER_KEY_DIR="$KEY_DIR" "$PROVER" < "$fixture" | wc -c | tr -d ' ')"
+  if [ "$n" = "256" ]; then
+    pass_step "real ${c} proof (256 bytes)"
+  else
+    add_failure "prover did not emit a 256-byte proof for ${c} (got ${n} bytes)"
+    _prover_failures=$((_prover_failures + 1))
   fi
-  local size
-  size="$(wc -c < "$out" | tr -d ' ')"
-  if [[ "$size" -ne 256 ]]; then
-    add_failure "prover returned ${size} bytes for ${circuit}; expected 256-byte Groth16 proof"
-  fi
-}
-
-check_prover_circuit deposit
-check_prover_circuit transfer
-check_prover_circuit withdraw
-if [[ "${#FAILURES[@]}" -eq 0 ]]; then
-  pass_step "prover generates real proof-shaped outputs for all shielded circuits"
+done
+if [[ "$_prover_failures" -eq 0 ]]; then
+  pass_step "prover generates real Groth16 proofs for all shielded circuits"
 fi
 
 finish_if_failures

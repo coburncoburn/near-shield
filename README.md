@@ -4,17 +4,19 @@ Privacy-preserving USDC pool on NEAR with per-user auditor view keys.
 
 See [`docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md`](docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md) for the design and [`docs/superpowers/plans/2026-05-24-near-shielded-pool.md`](docs/superpowers/plans/2026-05-24-near-shielded-pool.md) for the implementation plan.
 
-## Status: PROTOTYPE -- DEPLOYMENT GATED
+## Status: SANDBOX-READY -- NOT MAINNET-READY
 
-Most safety preconditions are in place, but the repository is **not ready for a funds-bearing deployment** until the production-readiness gate passes:
+The production-readiness gate now passes for sandbox deployments:
 
 ```sh
 ./scripts/check-production-readiness.sh
 ```
 
-Remaining release blocker:
+The prover (`tools/prover`) proves real `deposit`, `transfer`, and `withdraw` Groth16 circuits using NEAR's `alt_bn128` host functions. Proof generation and the verify-via-contract host-function test pass in any environment.
 
-1. **Real shielded-pool prover.** The contract has real Groth16 verification plumbing through NEAR's `alt_bn128` host functions, but `tools/prover` currently proves only a reference `mul` circuit. Production requires proof generation for the actual `deposit`, `transfer`, and `withdraw` circuits, with proving/verifying keys generated from those exact constraints.
+> **Sandbox only — never use with real funds.** This prototype has not undergone circuit soundness review, a trusted-setup ceremony, or an external security audit. See `docs/superpowers/specs/2026-05-26-real-groth16-prover-e2e.md` for the path-to-production gates that remain before any mainnet deployment.
+
+Note: the E2E near-workspaces integration test (`contract/tests/integration.rs`) exercises the full on-chain flow with real proofs but requires NEAR protocol sandbox ≥ v84; the bundled sandbox is older, so that test is environment-gated. Proof generation and contract-level verifier tests pass regardless.
 
 What **is** in place:
 
@@ -48,12 +50,17 @@ Total: **190 passing tests across four layers, with 3 intentionally ignored diag
 
 ## Production Gate
 
-The production-readiness script is intentionally strict and currently fails on
-the release blocker above. It fails unless:
+The production-readiness script verifies:
 
-- the SDK/prover path can generate real 256-byte proofs for `deposit`, `transfer`, and `withdraw`
+- the prover binary builds, circuit keys are generated via `setup`, and real 256-byte Groth16 proofs are produced for `deposit`, `transfer`, and `withdraw`
 - the production verifier feature compiles for `wasm32-unknown-unknown`
 - default WASM builds with mock verifier semantics are rejected
 - the optimised WASM artifact exists and fits under NEAR's deploy transaction limit
 
-Until that script passes, use only local sandbox deployments and never deposit real funds.
+**Remaining path-to-mainnet gates** (see spec for details):
+
+1. Independent circuit soundness review
+2. Trusted-setup ceremony for production proving/verifying keys
+3. External security audit of contract + SDK + prover
+
+Until those gates pass, use only local sandbox deployments and **never deposit real funds**.
