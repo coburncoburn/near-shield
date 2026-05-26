@@ -2,9 +2,7 @@
 //! the contract (`contract/src/poseidon.rs`), the Noir circuits, and the SDK.
 
 use ark_bn254::Fr;
-use ark_ff::PrimeField;
 use ark_ff::Zero;
-use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
@@ -137,6 +135,8 @@ pub fn merkle_inclusion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_ff::PrimeField;
+    use ark_r1cs_std::alloc::AllocVar;
     use ark_r1cs_std::R1CSVar;
     use ark_relations::r1cs::ConstraintSystem;
 
