@@ -85,6 +85,12 @@ Constraints (from `circuits/transfer/src/main.nr`):
 - Merkle inclusion of `c_in0`, `c_in1` under `merkle_root` (depth 20)
 - `commit_note(out0 with recipient_auditor_pubkey) == commitment_out0` (and `1`)
 - `in0_amount + in1_amount == out0_amount + out1_amount`
+- **Amount range checks (hardening beyond the Noir reference):** each of
+  `in0_amount`, `in1_amount`, `out0_amount`, `out1_amount` is constrained to fit in 128
+  bits. This closes the field-modular wraparound exploit: without it, an attacker can
+  pick huge output amounts that sum (mod the BN254 scalar field p ≈ 2²⁵⁴) to equal the
+  input sum while actually minting value. Two 128-bit inputs sum to < 2¹²⁹ ≪ p, so the
+  equality is exact. Contract amounts are `u128`, so 128 bits is the natural bound.
 - `view_ct_hash_sender == witness` and `view_ct_hash_recipient == witness`
 - Both input notes carry `auditor_pubkey` (the public input), enforced by using it as
   the auditor field inside `commit_note` for the input commitments.
@@ -145,6 +151,8 @@ integration tests:
   - `merkle_inclusion(root, leaf, index_bits, path)` — depth-20 ladder with a
     `Boolean`-conditioned swap per level.
   - `enforce_u64_geq(a, b)` — 64-bit-bounded comparison for the withdraw fee bound.
+  - `enforce_bits(x, n)` — constrain `x` to fit in `n` bits (bit decomposition), used for
+    the transfer amount range checks (`n = 128`).
 - **`deposit.rs`, `transfer.rs`, `withdraw.rs`** — each a `ConstraintSynthesizer<Fr>`:
   - `blank()` constructor with all witness/input values `None` (used by setup, which
     needs only the constraint shape).
@@ -210,7 +218,10 @@ sandbox flows.
    inputs (extends `groth16_proof.rs`).
 4. **Per-circuit negative cases:** mirror the Noir `should_fail` tests — wrong amount,
    forged Merkle path, value-conservation violation, auditor laundering, wrong spending
-   key. Each must be **unsatisfiable** (no proof) or rejected by the verifier.
+   key. Each must be **unsatisfiable** (no proof) or rejected by the verifier. **Plus a
+   wraparound test** unique to this port: transfer outputs whose values sum to the input
+   sum only modulo p (one output ≥ 2¹²⁸) must be unsatisfiable, proving the range checks
+   close the mint exploit.
 5. **End-to-end near-workspaces test (un-skipped):** build/deploy the `groth16-verifier`
    WASM, init with generated VKs, then:
    - deposit with a real proof → assert the leaf is inserted and the root advances;
@@ -221,17 +232,44 @@ sandbox flows.
    three circuits, prod verifier compiles for `wasm32`, default mock WASM rejected, opt
    WASM under the deploy limit.
 
-## Out of scope / documented gaps
+## Out of scope for this spec
 
-- **In-circuit amount range-checks for value conservation.** The Noir reference enforces
-  conservation with bare `Field` equality and does not range-check amounts, so a malicious
-  prover could exploit field-modular wraparound. This port **matches the Noir reference**
-  (does not add range checks) to preserve parity, and documents the gap. The withdraw
-  `amount >= relayer_fee` bound **is** implemented because it exists in the Noir reference.
-- **Secure trusted-setup ceremony.** Setup is deterministic/seeded; production requires a
-  real multi-party ceremony. Tracked separately.
+- **Secure trusted-setup ceremony.** Setup here is deterministic/seeded; production
+  requires a real multi-party ceremony (see Path to production).
 - **Replacing or regenerating the Noir circuits.** They remain the reference spec; this
-  work does not change them.
+  work does not change them. (The transfer amount range checks are a deliberate hardening
+  *beyond* the Noir reference, since the Noir version has the wraparound gap.)
+- **External security audit, testnet soak, governance.** Tracked in Path to production,
+  not implemented here.
+
+## Path to production (mainnet, funds-bearing)
+
+Completing this spec makes the loop work end to end on a **local sandbox**. It does NOT
+make the system safe to hold real funds. The following gates remain and must be tracked
+explicitly. They are ordered roughly by dependency.
+
+1. **[in this spec] Real proofs end to end** — deposit/transfer/withdraw provable and
+   verified on-chain in sandbox; `check-production-readiness.sh` green.
+2. **[in this spec] Value-conservation range checks** — transfer amounts bounded to 128
+   bits (closes the field-wraparound mint exploit).
+3. **Circuit soundness review** — independent review of every circuit for
+   under-constraining (missing equality/range/membership constraints). The #1 fund-loss
+   class for shielded pools. Negative tests are necessary but not sufficient.
+4. **Trusted-setup ceremony** — multi-party Groth16 setup per circuit so no single party
+   knows the toxic waste. Replace the seeded `setup` keys with ceremony output; pin and
+   publish the resulting VKs. Hard blocker for funds.
+5. **External security audit** — circuits + contract + SDK, by a firm experienced with zk
+   privacy pools. Hard blocker for funds.
+6. **Testnet soak with real USDC** — full deposit/transfer/withdraw + relayer flows on
+   NEAR testnet, including failed-payout recovery (`claim()`) and storage-staking edges.
+7. **Relayer hardening** — fee economics, DoS resistance, mempool/front-running review on
+   the public `recipient`/`relayer` inputs.
+8. **Governance & upgradability** — contract owner key custody, upgrade path (or
+   immutability decision), pause/emergency procedure, VK-rotation policy.
+9. **Operational** — monitoring, key management, incident runbook, gas/economics review.
+
+Until gates 3–5 are complete, deploy only to sandbox/testnet and never with real funds.
+`README.md` must continue to reflect this status.
 
 ## Success criteria
 
