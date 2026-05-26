@@ -3,6 +3,10 @@ name = "shielded-prover"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "shielded_prover"
+path = "src/lib.rs"
+
 [[bin]]
 name = "shielded-prover"
 path = "src/main.rs"
@@ -16,6 +20,12 @@ ark-ec = { version = "0.4", default-features = false }
 ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
 ark-std = { version = "0.4", default-features = false, features = ["std"] }
 ark-serialize = { version = "0.4", default-features = false }
+ark-r1cs-std = { version = "0.4", default-features = false }
+light-poseidon = { version = "0.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
+
+[dev-dependencies]
+shielded-pool = { path = "../../contract" }
+hex = "0.4"
