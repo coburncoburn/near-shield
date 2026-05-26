@@ -1,173 +1,168 @@
-//! Shielded-pool Groth16 prover.
+//! Shielded-pool Groth16 prover CLI.
 //!
-//! Reads a JSON `ProveRequest` from stdin, generates a real Groth16 proof
-//! against the BN254 curve, and writes a 256-byte EIP-196/197 proof to stdout.
+//! Modes:
+//!   setup  --out-dir <dir>      generate {deposit,transfer,withdraw}.pk/.vk
+//!   prove  (default, stdin)     read ProveRequest JSON, write 256-byte proof
 //!
-//! Wire format matches `contract/src/groth16.rs::Proof::from_bytes`:
-//!   stdout = A_g1 (64 bytes LE) || B_g2 (128 bytes LE) || C_g1 (64 bytes LE)
-//!
-//! For demonstration, this CLI supports only a `Mul`-shaped circuit (proves
-//! `a * b == c` where c is public). Production deployments would extend the
-//! `Circuits` enum with the real deposit/transfer/withdraw constraints
-//! expressed in arkworks-rs's R1CS DSL or imported from a circom build.
-//! The repository's `scripts/check-production-readiness.sh` fails until those
-//! production circuits are implemented.
-//!
-//! Setup proving keys live next to the binary as `<circuit>.pk` files.
-//! Re-running the binary with `setup` mode generates them.
+//! Proof wire format: A_g1(64) || B_g2(128) || C_g1(64) (EIP-196/197 LE).
 
 use anyhow::{anyhow, bail, Context, Result};
-use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
-use ark_ec::AffineRepr;
-use ark_ff::{BigInteger, PrimeField};
+use ark_bn254::{Bn254, Fr};
 use ark_groth16::{Groth16, ProvingKey};
-use ark_relations::lc;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_serialize::CanonicalDeserialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
-use ark_std::rand::SeedableRng;
 use ark_std::rand::rngs::StdRng;
+use ark_std::rand::SeedableRng;
 use serde::Deserialize;
+use serde_json::Value;
+use std::fs;
 use std::io::{Read, Write};
+use std::path::Path;
+
+use shielded_prover::circuits::deposit::DepositCircuit;
+use shielded_prover::circuits::transfer::{TransferCircuit, DEPTH as T_DEPTH};
+use shielded_prover::circuits::withdraw::{WithdrawCircuit, DEPTH as W_DEPTH};
+use shielded_prover::keys::{build_proof_bytes, build_vk_bytes, parse_hex_fr};
 
 #[derive(Deserialize)]
 struct ProveRequest {
-    /// Which circuit's proving key to load.
     circuit: String,
-    /// Public inputs as 0x-prefixed 64-hex-char strings.
     #[serde(rename = "publicInputs")]
     public_inputs: Vec<String>,
-    /// Circuit-specific witness object. For the Mul circuit: { a, b }.
-    witness: serde_json::Value,
+    witness: Value,
 }
 
-#[derive(Clone)]
-struct MulCircuit {
-    a: Option<Fr>,
-    b: Option<Fr>,
-    c: Option<Fr>,
+/// Fixed seed so `setup` reproduces identical proving/verifying keys and
+/// `prove` is deterministic. NOT a secure ceremony — prototype only.
+fn rng() -> StdRng {
+    StdRng::seed_from_u64(0x5151_3ded_u64)
 }
 
-impl ConstraintSynthesizer<Fr> for MulCircuit {
-    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        let a = cs.new_witness_variable(|| self.a.ok_or(SynthesisError::AssignmentMissing))?;
-        let b = cs.new_witness_variable(|| self.b.ok_or(SynthesisError::AssignmentMissing))?;
-        let c = cs.new_input_variable(|| self.c.ok_or(SynthesisError::AssignmentMissing))?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)
+fn setup(out_dir: &str) -> Result<()> {
+    fs::create_dir_all(out_dir)?;
+    write_keys(out_dir, "deposit", DepositCircuit::blank())?;
+    write_keys(out_dir, "transfer", TransferCircuit::blank())?;
+    write_keys(out_dir, "withdraw", WithdrawCircuit::blank())?;
+    Ok(())
+}
+
+fn write_keys<C: ark_relations::r1cs::ConstraintSynthesizer<Fr> + Clone>(
+    out_dir: &str,
+    name: &str,
+    blank: C,
+) -> Result<()> {
+    let mut r = rng();
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(blank, &mut r)
+        .with_context(|| format!("setup {name}"))?;
+    let mut pk_bytes = Vec::new();
+    pk.serialize_compressed(&mut pk_bytes)?;
+    fs::write(Path::new(out_dir).join(format!("{name}.pk")), &pk_bytes)?;
+    fs::write(Path::new(out_dir).join(format!("{name}.vk")), build_vk_bytes(&vk))?;
+    Ok(())
+}
+
+fn load_pk(out_dir: &str, name: &str) -> Result<ProvingKey<Bn254>> {
+    let bytes = fs::read(Path::new(out_dir).join(format!("{name}.pk")))
+        .with_context(|| format!("read {name}.pk (run `setup` first)"))?;
+    ProvingKey::<Bn254>::deserialize_compressed(bytes.as_slice())
+        .with_context(|| format!("parse {name}.pk"))
+}
+
+fn w(v: &Value, k: &str) -> Result<Fr> {
+    let s = v.get(k).and_then(|x| x.as_str()).ok_or_else(|| anyhow!("witness.{k} missing"))?;
+    parse_hex_fr(s)
+}
+fn w_path<const N: usize>(v: &Value, k: &str) -> Result<[Fr; N]> {
+    let arr = v.get(k).and_then(|x| x.as_array()).ok_or_else(|| anyhow!("witness.{k} missing array"))?;
+    anyhow::ensure!(arr.len() == N, "witness.{k} must have {N} entries");
+    let mut out = [Fr::from(0u64); N];
+    for (i, e) in arr.iter().enumerate() {
+        out[i] = parse_hex_fr(e.as_str().ok_or_else(|| anyhow!("witness.{k}[{i}] not string"))?)?;
     }
+    Ok(out)
 }
 
-fn parse_hex_fr(s: &str) -> Result<Fr> {
-    let t = s.strip_prefix("0x").unwrap_or(s);
-    if t.len() != 64 {
-        bail!("expected 64 hex chars, got {}", t.len());
-    }
-    let mut bytes = [0u8; 32];
-    for i in 0..32 {
-        bytes[i] = u8::from_str_radix(&t[i * 2..i * 2 + 2], 16)
-            .with_context(|| format!("invalid hex at position {}", i * 2))?;
-    }
-    // be -> le for Fr::from_le_bytes_mod_order
-    bytes.reverse();
-    Ok(Fr::from_le_bytes_mod_order(&bytes))
-}
-
-fn fr_to_le_32(f: Fr) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    let bytes = f.into_bigint().to_bytes_le();
-    out[..bytes.len()].copy_from_slice(&bytes);
-    out
-}
-
-fn g1_to_eip196(p: G1Affine) -> [u8; 64] {
-    let mut out = [0u8; 64];
-    if let Some((x, y)) = p.xy() {
-        let xb = x.into_bigint().to_bytes_le();
-        let yb = y.into_bigint().to_bytes_le();
-        out[..xb.len()].copy_from_slice(&xb);
-        out[32..32 + yb.len()].copy_from_slice(&yb);
-    }
-    out
-}
-
-fn g2_to_eip197(p: G2Affine) -> [u8; 128] {
-    let mut out = [0u8; 128];
-    if let Some((x, y)) = p.xy() {
-        let segments = [
-            x.c0.into_bigint().to_bytes_le(),
-            x.c1.into_bigint().to_bytes_le(),
-            y.c0.into_bigint().to_bytes_le(),
-            y.c1.into_bigint().to_bytes_le(),
-        ];
-        for (i, seg) in segments.iter().enumerate() {
-            out[i * 32..i * 32 + seg.len()].copy_from_slice(seg);
+fn prove(req: ProveRequest, key_dir: &str) -> Result<Vec<u8>> {
+    let mut r = rng();
+    let pis: Vec<Fr> = req.public_inputs.iter().map(|s| parse_hex_fr(s)).collect::<Result<_>>()?;
+    let wt = &req.witness;
+    let proof = match req.circuit.as_str() {
+        "deposit" => {
+            anyhow::ensure!(pis.len() == 4, "deposit expects 4 public inputs");
+            let c = DepositCircuit {
+                commitment: Some(pis[0]), amount: Some(pis[1]),
+                auditor_pubkey: Some(pis[2]), view_ct_hash: Some(pis[3]),
+                owner_pubkey: Some(w(wt, "ownerPubkey")?),
+                blinding: Some(w(wt, "blinding")?),
+                view_ct_hash_witness: Some(w(wt, "viewCtHashWitness")?),
+            };
+            let pk = load_pk(key_dir, "deposit")?;
+            Groth16::<Bn254>::prove(&pk, c, &mut r)?
         }
-    }
-    out
-}
-
-fn build_proof_bytes(proof: &ark_groth16::Proof<Bn254>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(256);
-    out.extend_from_slice(&g1_to_eip196(proof.a));
-    out.extend_from_slice(&g2_to_eip197(proof.b));
-    out.extend_from_slice(&g1_to_eip196(proof.c));
-    out
+        "withdraw" => {
+            anyhow::ensure!(pis.len() == 8, "withdraw expects 8 public inputs");
+            let c = WithdrawCircuit {
+                merkle_root: Some(pis[0]), nullifier: Some(pis[1]), recipient: Some(pis[2]),
+                amount: Some(pis[3]), relayer: Some(pis[4]), relayer_fee: Some(pis[5]),
+                auditor_pubkey: Some(pis[6]), view_ct_hash: Some(pis[7]),
+                note_amount: Some(w(wt, "noteAmount")?),
+                note_owner_pubkey: Some(w(wt, "noteOwnerPubkey")?),
+                note_auditor_pubkey: Some(w(wt, "noteAuditorPubkey")?),
+                note_blinding: Some(w(wt, "noteBlinding")?),
+                spending_key: Some(w(wt, "spendingKey")?),
+                leaf_index: Some(w(wt, "leafIndex")?),
+                merkle_path: Some(w_path::<{ W_DEPTH }>(wt, "merklePath")?),
+                view_ct_hash_witness: Some(w(wt, "viewCtHashWitness")?),
+            };
+            let pk = load_pk(key_dir, "withdraw")?;
+            Groth16::<Bn254>::prove(&pk, c, &mut r)?
+        }
+        "transfer" => {
+            anyhow::ensure!(pis.len() == 9, "transfer expects 9 public inputs");
+            let c = TransferCircuit {
+                merkle_root: Some(pis[0]), nullifier0: Some(pis[1]), nullifier1: Some(pis[2]),
+                commitment_out0: Some(pis[3]), commitment_out1: Some(pis[4]),
+                auditor_pubkey: Some(pis[5]), recipient_auditor_pubkey: Some(pis[6]),
+                view_ct_hash_sender: Some(pis[7]), view_ct_hash_recipient: Some(pis[8]),
+                in0_amount: Some(w(wt, "in0Amount")?), in0_owner_pubkey: Some(w(wt, "in0OwnerPubkey")?),
+                in0_blinding: Some(w(wt, "in0Blinding")?), in0_leaf_index: Some(w(wt, "in0LeafIndex")?),
+                in0_path: Some(w_path::<{ T_DEPTH }>(wt, "in0Path")?),
+                in1_amount: Some(w(wt, "in1Amount")?), in1_owner_pubkey: Some(w(wt, "in1OwnerPubkey")?),
+                in1_blinding: Some(w(wt, "in1Blinding")?), in1_leaf_index: Some(w(wt, "in1LeafIndex")?),
+                in1_path: Some(w_path::<{ T_DEPTH }>(wt, "in1Path")?),
+                spending_key: Some(w(wt, "spendingKey")?),
+                out0_amount: Some(w(wt, "out0Amount")?), out0_owner_pubkey: Some(w(wt, "out0OwnerPubkey")?),
+                out0_blinding: Some(w(wt, "out0Blinding")?),
+                out1_amount: Some(w(wt, "out1Amount")?), out1_owner_pubkey: Some(w(wt, "out1OwnerPubkey")?),
+                out1_blinding: Some(w(wt, "out1Blinding")?),
+                view_ct_hash_sender_witness: Some(w(wt, "viewCtHashSenderWitness")?),
+                view_ct_hash_recipient_witness: Some(w(wt, "viewCtHashRecipientWitness")?),
+            };
+            let pk = load_pk(key_dir, "transfer")?;
+            Groth16::<Bn254>::prove(&pk, c, &mut r)?
+        }
+        other => bail!("unsupported circuit '{other}'"),
+    };
+    Ok(build_proof_bytes(&proof))
 }
 
 fn run() -> Result<()> {
-    let mut req_json = String::new();
-    std::io::stdin()
-        .read_to_string(&mut req_json)
-        .context("reading stdin")?;
-    let req: ProveRequest = serde_json::from_str(&req_json).context("parsing ProveRequest JSON")?;
+    let args: Vec<String> = std::env::args().collect();
+    let key_dir = std::env::var("PROVER_KEY_DIR").unwrap_or_else(|_| "keys".to_string());
 
-    let mut rng = StdRng::seed_from_u64(0xcafe_babe);
-
-    match req.circuit.as_str() {
-        "mul" => {
-            // Reference circuit. Witness JSON: { "a": "0x...", "b": "0x..." }
-            let a_hex = req
-                .witness
-                .get("a")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("witness.a missing or not a string"))?;
-            let b_hex = req
-                .witness
-                .get("b")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("witness.b missing or not a string"))?;
-            let c_hex = req
-                .public_inputs
-                .first()
-                .ok_or_else(|| anyhow!("publicInputs must contain c"))?;
-            let a = parse_hex_fr(a_hex)?;
-            let b = parse_hex_fr(b_hex)?;
-            let c = parse_hex_fr(c_hex)?;
-
-            // Setup is performed on every invocation here for simplicity. A
-            // production deployment loads a previously-generated proving key.
-            let setup_circuit = MulCircuit {
-                a: Some(a),
-                b: Some(b),
-                c: Some(c),
-            };
-            let (pk, _vk) = Groth16::<Bn254>::circuit_specific_setup(setup_circuit.clone(), &mut rng)
-                .context("Groth16 setup")?;
-            let proof = Groth16::<Bn254>::prove(&pk, setup_circuit, &mut rng)
-                .context("Groth16 prove")?;
-
-            let bytes = build_proof_bytes(&proof);
-            std::io::stdout().write_all(&bytes).context("write stdout")?;
-            std::io::stdout().flush().context("flush stdout")?;
-            Ok(())
-        }
-        other => bail!(
-            "unsupported circuit '{other}'. \
-             v0 implements only the reference 'mul' circuit; \
-             real deposit/transfer/withdraw circuits need to be expressed \
-             in arkworks R1CS or imported from a circom build."
-        ),
+    if args.get(1).map(|s| s.as_str()) == Some("setup") {
+        let out = args.iter().position(|a| a == "--out-dir")
+            .and_then(|i| args.get(i + 1)).cloned().unwrap_or(key_dir);
+        return setup(&out);
     }
+
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf).context("read stdin")?;
+    let req: ProveRequest = serde_json::from_str(&buf).context("parse ProveRequest")?;
+    let bytes = prove(req, &key_dir)?;
+    std::io::stdout().write_all(&bytes).context("write stdout")?;
+    std::io::stdout().flush()?;
+    Ok(())
 }
 
 fn main() {
@@ -175,23 +170,4 @@ fn main() {
         eprintln!("prover error: {e:#}");
         std::process::exit(1);
     }
-}
-
-// Silence dead_code warnings on helpers used by future circuit additions.
-#[allow(dead_code)]
-fn _suppress_unused(
-    f: Fr,
-    pk: ProvingKey<Bn254>,
-) -> (
-    [u8; 32],
-    ProvingKey<Bn254>,
-    Result<ProvingKey<Bn254>, ark_serialize::SerializationError>,
-) {
-    let _ = fr_to_le_32(f);
-    let serialized = vec![];
-    (
-        fr_to_le_32(f),
-        pk,
-        ProvingKey::<Bn254>::deserialize_compressed(serialized.as_slice()),
-    )
 }
