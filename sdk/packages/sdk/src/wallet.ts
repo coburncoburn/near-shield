@@ -6,6 +6,7 @@ import {
   encodeDisclosure,
   encodeNotePayload,
   generateKeyPair,
+  hashBytesToField,
   poseidon2,
   scanNotes,
   sealTo,
@@ -52,6 +53,25 @@ export interface WithdrawRequest {
   recipientNearAccount: string;
   relayer: string;
   relayerFee: bigint;
+  /**
+   * Merkle inclusion path for the input note (20 sibling hashes, 0x-prefixed
+   * 32-byte hex). Required only by `buildWithdrawProved`; the synchronous
+   * `buildWithdraw` ignores this field.
+   */
+  merklePath?: string[];
+  /**
+   * Merkle root at the time of proving. Required only by `buildWithdrawProved`.
+   */
+  merkleRoot?: string;
+}
+
+export interface TransferMerkleInputs {
+  /** Merkle root at the time of proving. */
+  merkleRoot: string;
+  /** Merkle inclusion path for input note 0 (20 sibling hashes, 0x-prefixed hex). */
+  merklePath0: string[];
+  /** Merkle inclusion path for input note 1 (20 sibling hashes, 0x-prefixed hex). */
+  merklePath1: string[];
 }
 
 /**
@@ -263,6 +283,271 @@ export class Wallet {
     };
   }
 
+  /**
+   * Builds a deposit transaction with a real Groth16 proof from the given
+   * `Prover`. Returns a `BuiltTx` identical to `buildDeposit` except
+   * `proof` is the full 256-byte EIP-196/197 serialisation.
+   */
+  async buildDepositProved(req: DepositRequest, prover: Prover): Promise<BuiltTx> {
+    const auditorPubkeyField = pubkeyToField(req.auditorPubkey);
+    const blinding = randomField();
+    const note: Note = {
+      amount: req.amount,
+      ownerPubkey: this.ownerPubkey,
+      auditorPubkey: auditorPubkeyField,
+      blinding,
+    };
+    const commitment = commitNote(note);
+    const disclosure: ViewDisclosure = {
+      action: "deposit",
+      senderOwnerPubkey: this.ownerPubkey.toHex(),
+      recipientOwnerPubkey: this.ownerPubkey.toHex(),
+      amounts: [req.amount.toString()],
+      memo: "",
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure));
+    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey));
+
+    const viewCtHashHex = hashBytesToField(viewCt).toHex();
+
+    // Public inputs ordered: commitment, amount, auditorPubkey, view_ct_hash
+    const publicInputsArr: string[] = [
+      commitment.toHex(),
+      new Field(req.amount).toHex(),
+      auditorPubkeyField.toHex(),
+      viewCtHashHex,
+    ];
+
+    const witness: Record<string, unknown> = {
+      ownerPubkey: this.ownerPubkey.toHex(),
+      blinding: blinding.toHex(),
+      viewCtHashWitness: viewCtHashHex,
+    };
+
+    const proof = await prover.prove({ circuit: "deposit", publicInputs: publicInputsArr, witness });
+
+    return {
+      method: "deposit",
+      publicInputs: {
+        commitment: commitment.toHex(),
+        amount: req.amount.toString(),
+        auditorPubkey: auditorPubkeyField.toHex(),
+        viewCtLen: viewCt.length,
+      },
+      proof,
+      viewCiphertexts: [viewCt],
+      noteCiphertexts: [noteCt],
+    };
+  }
+
+  /**
+   * Builds a transfer transaction with a real Groth16 proof from the given
+   * `Prover`. The caller must supply `merkleInputs` with the merkle root and
+   * inclusion paths for both input notes (the wallet cannot fetch on-chain
+   * state itself).
+   */
+  async buildTransferProved(
+    req: TransferRequest,
+    prover: Prover,
+    merkleInputs: TransferMerkleInputs
+  ): Promise<BuiltTx> {
+    if (req.amount <= 0n) {
+      throw new Error("transfer amount must be positive");
+    }
+    const inputs = this.findTransferInputs(req.amount);
+    if (!inputs) {
+      throw new Error(`no two unspent notes cover ${req.amount} with the same auditor (have: ${this.balance()})`);
+    }
+
+    const [input0, input1] = inputs;
+    const senderAuditorField = input0.note.auditorPubkey;
+    const senderAuditorPubkey = input0.auditorPubkeyBytes;
+    if (!senderAuditorPubkey) {
+      throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
+    }
+    const nullifier0 = computeNullifier(this.spendingKey, input0.commitment, input0.leafIndex);
+    const nullifier1 = computeNullifier(this.spendingKey, input1.commitment, input1.leafIndex);
+    const inputTotal = input0.note.amount + input1.note.amount;
+
+    const recipientAuditorField = pubkeyToField(req.recipientAuditorPubkey);
+    const recipientBlinding = randomField();
+    const changeBlinding = randomField();
+    const recipientOut: Note = {
+      amount: req.amount,
+      ownerPubkey: req.recipientOwnerPubkey,
+      auditorPubkey: recipientAuditorField,
+      blinding: recipientBlinding,
+    };
+    const changeOut: Note = {
+      amount: inputTotal - req.amount,
+      ownerPubkey: this.ownerPubkey,
+      auditorPubkey: senderAuditorField,
+      blinding: changeBlinding,
+    };
+    const c_recipient = commitNote(recipientOut);
+    const c_change = commitNote(changeOut);
+
+    const disclosure: ViewDisclosure = {
+      action: "transfer",
+      senderOwnerPubkey: this.ownerPubkey.toHex(),
+      recipientOwnerPubkey: req.recipientOwnerPubkey.toHex(),
+      amounts: [req.amount.toString(), changeOut.amount.toString()],
+      memo: req.memo ?? "",
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure));
+    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure));
+
+    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey));
+    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey));
+
+    const viewCtHashSenderHex = hashBytesToField(viewCtSender).toHex();
+    const viewCtHashRecipientHex = hashBytesToField(viewCtRecipient).toHex();
+
+    // Public inputs ordered (9):
+    // merkle_root, nullifier0, nullifier1, commitment_out0, commitment_out1,
+    // auditor_pubkey, recipient_auditor_pubkey, view_ct_hash_sender, view_ct_hash_recipient
+    const publicInputsArr: string[] = [
+      merkleInputs.merkleRoot,
+      nullifier0.toHex(),
+      nullifier1.toHex(),
+      c_recipient.toHex(),
+      c_change.toHex(),
+      senderAuditorField.toHex(),
+      recipientAuditorField.toHex(),
+      viewCtHashSenderHex,
+      viewCtHashRecipientHex,
+    ];
+
+    const padPath = (p: string[]): string[] => {
+      const out = [...p];
+      while (out.length < 20) out.push(Field.zero().toHex());
+      return out.slice(0, 20);
+    };
+
+    const witness: Record<string, unknown> = {
+      in0Amount: new Field(input0.note.amount).toHex(),
+      in0OwnerPubkey: input0.note.ownerPubkey.toHex(),
+      in0Blinding: input0.note.blinding.toHex(),
+      in0LeafIndex: new Field(input0.leafIndex).toHex(),
+      in0Path: padPath(merkleInputs.merklePath0),
+      in1Amount: new Field(input1.note.amount).toHex(),
+      in1OwnerPubkey: input1.note.ownerPubkey.toHex(),
+      in1Blinding: input1.note.blinding.toHex(),
+      in1LeafIndex: new Field(input1.leafIndex).toHex(),
+      in1Path: padPath(merkleInputs.merklePath1),
+      spendingKey: this.spendingKey.toHex(),
+      out0Amount: new Field(recipientOut.amount).toHex(),
+      out0OwnerPubkey: recipientOut.ownerPubkey.toHex(),
+      out0Blinding: recipientBlinding.toHex(),
+      out1Amount: new Field(changeOut.amount).toHex(),
+      out1OwnerPubkey: changeOut.ownerPubkey.toHex(),
+      out1Blinding: changeBlinding.toHex(),
+      viewCtHashSenderWitness: viewCtHashSenderHex,
+      viewCtHashRecipientWitness: viewCtHashRecipientHex,
+    };
+
+    const proof = await prover.prove({ circuit: "transfer", publicInputs: publicInputsArr, witness });
+
+    return {
+      method: "transfer",
+      publicInputs: {
+        merkleRoot: merkleInputs.merkleRoot,
+        nullifiers: [nullifier0.toHex(), nullifier1.toHex()],
+        commitments: [c_recipient.toHex(), c_change.toHex()],
+        auditorPubkey: senderAuditorField.toHex(),
+        recipientAuditorPubkey: recipientAuditorField.toHex(),
+        amounts: [req.amount.toString(), changeOut.amount.toString()],
+      },
+      proof,
+      viewCiphertexts: [viewCtSender, viewCtRecipient],
+      noteCiphertexts: [noteCtRecipient, noteCtChange],
+    };
+  }
+
+  /**
+   * Builds a withdraw transaction with a real Groth16 proof from the given
+   * `Prover`. `req.merklePath` (20 siblings) and `req.merkleRoot` must be
+   * populated by the caller from on-chain state.
+   */
+  async buildWithdrawProved(req: WithdrawRequest, prover: Prover): Promise<BuiltTx> {
+    if (req.relayerFee > req.amount) {
+      throw new Error("relayer_fee exceeds amount");
+    }
+    if (!req.merklePath || req.merklePath.length !== 20) {
+      throw new Error("buildWithdrawProved requires req.merklePath with exactly 20 elements");
+    }
+    if (!req.merkleRoot) {
+      throw new Error("buildWithdrawProved requires req.merkleRoot");
+    }
+    const note = this.notes.find((n) => n.note.amount === req.amount);
+    if (!note) {
+      throw new Error(`no unspent note with amount exactly ${req.amount} (v0 whole-note withdraw)`);
+    }
+    const nullifier = computeNullifier(this.spendingKey, note.commitment, note.leafIndex);
+    const disclosure: ViewDisclosure = {
+      action: "withdraw",
+      senderOwnerPubkey: this.ownerPubkey.toHex(),
+      recipientOwnerPubkey: req.recipientNearAccount,
+      amounts: [req.amount.toString(), req.relayerFee.toString()],
+      memo: "",
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    const auditorField = note.note.auditorPubkey;
+    if (!note.auditorPubkeyBytes) {
+      throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
+    }
+    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure));
+
+    const viewCtHashHex = hashBytesToField(viewCt).toHex();
+
+    // Public inputs ordered (8):
+    // merkle_root, nullifier, recipient, amount, relayer, relayer_fee,
+    // auditor_pubkey, view_ct_hash
+    const recipientField = fieldFromAccountId(req.recipientNearAccount);
+    const relayerField = fieldFromAccountId(req.relayer);
+    const publicInputsArr: string[] = [
+      req.merkleRoot,
+      nullifier.toHex(),
+      recipientField.toHex(),
+      new Field(req.amount).toHex(),
+      relayerField.toHex(),
+      new Field(req.relayerFee).toHex(),
+      auditorField.toHex(),
+      viewCtHashHex,
+    ];
+
+    const witness: Record<string, unknown> = {
+      noteAmount: new Field(note.note.amount).toHex(),
+      noteOwnerPubkey: note.note.ownerPubkey.toHex(),
+      noteAuditorPubkey: note.note.auditorPubkey.toHex(),
+      noteBlinding: note.note.blinding.toHex(),
+      spendingKey: this.spendingKey.toHex(),
+      leafIndex: new Field(note.leafIndex).toHex(),
+      merklePath: req.merklePath,
+      viewCtHashWitness: viewCtHashHex,
+    };
+
+    const proof = await prover.prove({ circuit: "withdraw", publicInputs: publicInputsArr, witness });
+
+    return {
+      method: "withdraw",
+      publicInputs: {
+        merkleRoot: req.merkleRoot,
+        nullifier: nullifier.toHex(),
+        recipient: req.recipientNearAccount,
+        amount: req.amount.toString(),
+        relayer: req.relayer,
+        relayerFee: req.relayerFee.toString(),
+        auditorPubkey: auditorField.toHex(),
+      },
+      proof,
+      viewCiphertexts: [viewCt],
+      noteCiphertexts: [],
+    };
+  }
+
   private findTransferInputs(amount: bigint): [DiscoveredNote, DiscoveredNote] | null {
     for (let i = 0; i < this.notes.length; i++) {
       for (let j = i + 1; j < this.notes.length; j++) {
@@ -303,4 +588,13 @@ function deriveX25519Pub(priv: Uint8Array): Uint8Array {
 function sameBytes(a: Uint8Array | undefined, b: Uint8Array | undefined): boolean {
   if (!a || !b || a.length !== b.length) return false;
   return a.every((x, i) => x === b[i]);
+}
+
+/**
+ * Encodes a NEAR account-id string as a Field element by hashing its UTF-8
+ * bytes using hashBytesToField. This matches how the circuit treats string
+ * public inputs (the prover binary applies the same transformation).
+ */
+function fieldFromAccountId(accountId: string): Field {
+  return hashBytesToField(new TextEncoder().encode(accountId));
 }
