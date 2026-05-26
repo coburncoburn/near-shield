@@ -62,16 +62,17 @@ export interface WithdrawRequest {
 export interface BuiltTx {
   method: "deposit" | "transfer" | "withdraw";
   publicInputs: Record<string, string | string[] | number>;
-  proof: Uint8Array; // placeholder until barretenberg prover integration
+  proof: Uint8Array;
   viewCiphertexts: Uint8Array[];
   noteCiphertexts: Uint8Array[];
 }
 
 /**
  * v0 Wallet: handles key derivation, note scanning, and transaction *building*.
- * Proof generation is stubbed (`proof = Uint8Array([0])`) until the bb prover
- * is integrated (Phase 5 / 7 work). The structure of the produced public inputs
- * and ciphertexts is final and tested.
+ * The synchronous builders below still emit placeholder proofs for mock-verifier
+ * sandbox flows. Funds-bearing deployments must use an injected production
+ * prover and the async proved builders once the real deposit/transfer/withdraw
+ * proving keys are available.
  */
 export class Wallet {
   readonly spendingKey: Field;
@@ -150,7 +151,7 @@ export class Wallet {
         auditorPubkey: auditorPubkeyField.toHex(),
         viewCtLen: viewCt.length,
       },
-      proof: new Uint8Array([0]), // bb prover wires in here (Phase 5/7)
+      proof: new Uint8Array([0]),
       viewCiphertexts: [viewCt],
       noteCiphertexts: [noteCt],
     };

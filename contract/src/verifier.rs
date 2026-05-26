@@ -1,15 +1,15 @@
 use crate::poseidon::Field;
 
-/// Interface for zk proof verifiers. v0 ships a `MockVerifier` for host-side
-/// tests and a fail-closed `BbVerifier` placeholder for the real Barretenberg
-/// integration that lands in a later task.
+/// Interface for zk proof verifiers. Host-side tests use `MockVerifier`;
+/// deployable builds use the Groth16 verifier unless explicitly built with the
+/// legacy fail-closed `BbVerifier` path.
 pub trait Verifier {
     fn verify(&self, proof: &[u8], public_inputs: &[Field]) -> bool;
 }
 
 /// Mock verifier: accepts any non-empty proof regardless of public inputs.
-/// Used to drive contract-level unit tests of state transitions before the
-/// real verifier is wired in.
+/// Used to drive contract-level unit tests of state transitions without
+/// requiring expensive proof generation.
 ///
 /// SAFETY: A deployable WASM build with `unit-testing` is rejected by the
 /// compile_error gates below. The `integration-testing` feature *deliberately*
@@ -26,8 +26,8 @@ impl Verifier for MockVerifier {
     }
 }
 
-/// Production verifier placeholder. Until this is wired to Barretenberg, it
-/// rejects every proof so a `bb-verifier` build is not forgeable by accident.
+/// Legacy fail-closed verifier path. It rejects every proof so old
+/// `bb-verifier` builds are not forgeable by accident.
 #[cfg(all(
     feature = "bb-verifier",
     not(feature = "unit-testing"),
@@ -86,7 +86,7 @@ pub fn select_verifier(vk_bytes: &[u8]) -> impl Verifier {
 compile_error!(
     "WASM contract builds must disable `unit-testing`. \
      For sandbox integration tests use `--features integration-testing` instead. \
-     For deployment use `--no-default-features --features bb-verifier`."
+     For deployment use `--no-default-features --features groth16-verifier`."
 );
 
 #[cfg(all(
@@ -100,10 +100,8 @@ compile_error!(
     "Production contract build must enable a real verifier feature. \
      Building without a real verifier would make zk proofs trivially forgeable. \
      Use one of: \
-     `cargo near build --no-default-features --features groth16-verifier` (recommended; \
-     uses NEAR's alt_bn128 host functions, real on-chain verification), or \
-     `cargo near build --no-default-features --features bb-verifier` (fail-closed \
-     placeholder until Barretenberg Honk is ported)."
+     `cargo near build --no-default-features --features groth16-verifier` \
+     (uses NEAR's alt_bn128 host functions for real on-chain verification)."
 );
 
 #[cfg(test)]

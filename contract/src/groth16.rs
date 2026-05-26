@@ -31,8 +31,14 @@
 //!   e(-A, B) * e(alpha, beta) * e(L, gamma) * e(C, delta) == 1
 
 use crate::poseidon::Field;
-use crate::verifier::Verifier;
 use near_sdk::env;
+
+#[cfg(all(
+    feature = "groth16-verifier",
+    not(feature = "unit-testing"),
+    not(feature = "integration-testing")
+))]
+use crate::verifier::Verifier;
 
 const G1_LEN: usize = 64;
 const G2_LEN: usize = 128;

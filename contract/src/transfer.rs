@@ -1,5 +1,4 @@
-use crate::deposit::{hash_bytes_to_field, parse_hex32};
-use crate::poseidon::Field;
+use crate::deposit::hash_bytes_to_field;
 use crate::storage::{require_storage_deposit, TRANSFER_BYTES};
 use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
@@ -77,8 +76,6 @@ impl Contract {
             [&view_cts[0], &view_cts[1]],
             [&note_cts[0], &note_cts[1]],
         );
-
-        let _ = Field::zero(); // silence unused import in some build configurations
     }
 }
 

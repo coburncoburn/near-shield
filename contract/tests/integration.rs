@@ -4,7 +4,7 @@
 //! a stub NEP-141 USDC contract. Drives deposit/withdraw flows and verifies
 //! on-chain state transitions and emitted events.
 //!
-//! These tests use the `unit-testing` feature build of the pool (i.e.
+//! These tests use the `integration-testing` feature build of the pool (i.e.
 //! `MockVerifier` accepting any non-empty proof). They exercise the FT
 //! cross-contract plumbing, event emission, and storage semantics — not the
 //! zk soundness, which is tested separately in the lib unit tests and Noir.
@@ -14,14 +14,13 @@ use serde_json::json;
 
 const POOL_WASM_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm"
+    "/../target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm"
 );
 
 /// NEAR's per-transaction byte limit. A contract deployment must fit a single
 /// transaction (~4 KiB envelope overhead included). If our optimised WASM is
-/// over this, we skip rather than fail -- shrinking the binary (a known
-/// follow-up: replace ark-bn254/light-poseidon with a slimmer Poseidon impl)
-/// is a separate concern from the integration logic this test verifies.
+/// over this, we skip rather than fail; size is enforced by the production
+/// readiness gate.
 const NEAR_MAX_TX_BYTES: u64 = 1_572_864;
 
 fn hex32(byte: u8) -> String {
@@ -42,7 +41,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
                  --release --no-default-features --features integration-testing \
                && wasm-opt -Oz --enable-bulk-memory --strip-debug --strip-producers \
                  target/wasm32-unknown-unknown/release/shielded_pool.wasm \
-                 -o target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm"
+                 -o target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm"
         )
     })?;
 

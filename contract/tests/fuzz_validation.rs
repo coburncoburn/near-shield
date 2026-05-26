@@ -108,8 +108,8 @@ fn random_byte_inputs_to_hex32_reject_predictably() {
 
 #[test]
 fn proof_size_limit_is_reasonable() {
-    // Just confirm the limit isn't accidentally tiny (must hold a Honk proof).
-    // UltraHonk proofs are typically ~5-15 KiB; our limit is 64 KiB.
+    // Just confirm the limit isn't accidentally tiny. Groth16 is 256 bytes,
+    // but the contract deliberately leaves headroom for backend changes.
     assert!(MAX_PROOF_BYTES >= 16 * 1024);
     let p = vec![0u8; MAX_PROOF_BYTES + 1];
     let res = std::panic::catch_unwind(|| check_proof_bytes(&p));

@@ -8,10 +8,10 @@
  * Implementations:
  *   - `StubProver` (default): emits `Uint8Array([0])` -- only the contract's
  *     `unit-testing` / `integration-testing` builds accept this.
- *   - `SubprocessProver`: shells out to a configured CLI (e.g., a Rust binary
- *     that wraps arkworks Groth16 proving) and returns its stdout bytes.
- *     Production deployments configure this. The CLI's input format and
- *     output format are documented below.
+ *   - `SubprocessProver`: shells out to a configured CLI and returns its stdout
+ *     bytes. The bundled `tools/prover` is currently a reference harness unless
+ *     it can prove deposit/transfer/withdraw; production deployments must pass
+ *     `scripts/check-production-readiness.sh`.
  */
 
 export interface ProveRequest {
@@ -46,8 +46,7 @@ export class StubProver implements Prover {
  *   stdout: raw 256 bytes: A_g1 (64) || B_g2 (128) || C_g1 (64)
  *   exit:   0 on success, non-zero on failure (stderr carries the reason)
  *
- * Implementations of the binary (`tools/prover` in this repo, or any
- * substitutable binary that produces EIP-196/197 wire format) handle:
+ * Implementations of the binary handle:
  *   - loading the proving key for the requested circuit
  *   - building the arkworks/snarkjs witness from the JSON
  *   - generating the Groth16 proof

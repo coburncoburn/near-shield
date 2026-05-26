@@ -6,10 +6,12 @@
 //! Wire format matches `contract/src/groth16.rs::Proof::from_bytes`:
 //!   stdout = A_g1 (64 bytes LE) || B_g2 (128 bytes LE) || C_g1 (64 bytes LE)
 //!
-//! For demonstration, this CLI supports a `Mul`-shaped circuit (proves
+//! For demonstration, this CLI supports only a `Mul`-shaped circuit (proves
 //! `a * b == c` where c is public). Production deployments would extend the
 //! `Circuits` enum with the real deposit/transfer/withdraw constraints
 //! expressed in arkworks-rs's R1CS DSL or imported from a circom build.
+//! The repository's `scripts/check-production-readiness.sh` fails until those
+//! production circuits are implemented.
 //!
 //! Setup proving keys live next to the binary as `<circuit>.pk` files.
 //! Re-running the binary with `setup` mode generates them.

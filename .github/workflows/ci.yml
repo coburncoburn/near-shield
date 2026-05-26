@@ -12,11 +12,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: contract
       - name: Run unit tests
         run: cargo test -p shielded-pool --lib
+      - name: Build integration-test WASM
+        run: |
+          cargo build -p shielded-pool --target wasm32-unknown-unknown \
+            --release --no-default-features --features integration-testing
+          cp target/wasm32-unknown-unknown/release/shielded_pool.wasm \
+            target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm
+      - name: Run integration and verifier tests
+        run: SKIP_NEAR_INTEGRATION=1 cargo test -p shielded-pool --tests
+
+  deploy-safety:
+    name: Deploy safety checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+      - name: Check production-readiness script syntax
+        run: bash -n scripts/check-production-readiness.sh
+      - name: Production verifier compiles for WASM
+        run: cargo check -p shielded-pool --lib --target wasm32-unknown-unknown --no-default-features --features groth16-verifier
+      - name: Mock verifier cannot be built as default WASM
+        run: |
+          set +e
+          cargo check -p shielded-pool --lib --target wasm32-unknown-unknown >/tmp/default-wasm.log 2>&1
+          status="$?"
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "default WASM build unexpectedly succeeded"
+            exit 1
+          fi
+          grep -q 'WASM contract builds must disable `unit-testing`' /tmp/default-wasm.log
+      - name: Contract and circuit Merkle depths match production depth
+        run: |
+          grep -q 'pub const TREE_DEPTH: u8 = 20;' contract/src/lib.rs
+          grep -q 'pub global MERKLE_DEPTH: u32 = 20;' circuits/shared/src/lib.nr
 
   noir-circuits:
     name: Noir circuit tests
@@ -56,9 +97,24 @@ jobs:
         working-directory: sdk/packages/${{ matrix.package }}
         run: pnpm test
 
+  spec-validation:
+    name: Superpowers validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: tools/superpowers-validate
+        run: npm ci
+      - name: Run validation tests
+        working-directory: tools/superpowers-validate
+        run: npm test
+
   all-green:
     name: All checks passed
-    needs: [rust-contract, noir-circuits, typescript-sdk]
+    needs: [rust-contract, deploy-safety, noir-circuits, typescript-sdk, spec-validation]
     runs-on: ubuntu-latest
     steps:
       - run: echo "all CI jobs passed"

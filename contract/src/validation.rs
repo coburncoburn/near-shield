@@ -13,8 +13,8 @@ use near_sdk::require;
 /// covers a JSON disclosure or note ciphertext.
 pub const MAX_CIPHERTEXT_BYTES: usize = 8 * 1024;
 
-/// Maximum size of a serialized proof. UltraHonk proofs are a few KiB; we
-/// allow generous headroom but reject obvious garbage.
+/// Maximum size of a serialized proof. Groth16 proofs are 256 bytes; we allow
+/// generous headroom for backend changes while rejecting obvious garbage.
 pub const MAX_PROOF_BYTES: usize = 64 * 1024;
 
 /// Validates a 32-byte hex string ("0x" + 64 hex chars) and parses it as a

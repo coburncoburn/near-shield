@@ -4,17 +4,23 @@ Privacy-preserving USDC pool on NEAR with per-user auditor view keys.
 
 See [`docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md`](docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md) for the design and [`docs/superpowers/plans/2026-05-24-near-shielded-pool.md`](docs/superpowers/plans/2026-05-24-near-shielded-pool.md) for the implementation plan.
 
-## Status: PROTOTYPE -- NOT SAFE TO DEPLOY WITH FUNDS
+## Status: PROTOTYPE -- DEPLOYMENT GATED
 
-Most safety preconditions are in place. **Two cryptographic items remain before deployment is responsible**:
+Most safety preconditions are in place, but the repository is **not ready for a funds-bearing deployment** until the production-readiness gate passes:
 
-1. **Real on-chain verifier.** Host-side tests use `MockVerifier`. `--features bb-verifier` selects a fail-closed `BbVerifier` that rejects every proof until Honk verification is ported to Rust. WASM builds with `unit-testing` are rejected at compile time so mock semantics cannot leak into production.
+```sh
+./scripts/check-production-readiness.sh
+```
 
-2. **WASM size below NEAR's 1.5 MiB per-tx deploy limit.** The optimised contract is currently ~1.7 MiB. The dominant cost is `ark-bn254` + `light-poseidon`. Slimming requires a custom BN254 scalar-field crate.
+Remaining release blocker:
+
+1. **Real shielded-pool prover.** The contract has real Groth16 verification plumbing through NEAR's `alt_bn128` host functions, but `tools/prover` currently proves only a reference `mul` circuit. Production requires proof generation for the actual `deposit`, `transfer`, and `withdraw` circuits, with proving/verifying keys generated from those exact constraints.
 
 What **is** in place:
 
 - Cross-layer hash alignment (Rust + TS + Noir all use BN254 Poseidon with Circom params; vectors locked in `sdk/test-vectors/poseidon.json` and `view_ct_hash.json`)
+- Real Groth16 verifier plumbing with wrong-public-input and wrong-witness rejection tests
+- Slim on-chain Poseidon implementation with no production `ark-*`, `light-poseidon`, or `num-bigint` dependency; optimised Groth16 WASM is ~206 KiB
 - Real in-circuit Merkle inclusion proofs in `transfer.nr` and `withdraw.nr` (`forged_merkle_path_fails` tests confirm soundness)
 - Per-tx storage staking deposits (DoS protection on Merkle/nullifier growth)
 - Failed-payout recovery (`unclaimed_payouts` book + `claim()`) so a failed FT transfer after the nullifier is spent doesn't lose funds
@@ -32,10 +38,22 @@ What **is** in place:
 
 ## Test status
 
-- `cargo test -p shielded-pool --lib` -- 56 tests
-- `cargo test -p shielded-pool --tests` -- 9 fuzz/property + 1 near-workspaces (skips deploy until WASM <1.5 MiB)
+- `cargo test -p shielded-pool --lib` -- 66 passing tests + 2 ignored vector dumps
+- `cargo test -p shielded-pool --tests` -- 12 passing property/verifier tests + 1 environment-gated near-workspaces smoke + 1 ignored prover round-trip
 - `nargo test --workspace` (in `circuits/`) -- 22 tests
-- `pnpm -r test` -- core 39, sdk 18, auditor 7, relayer 6 = 70 tests
-- `tools/superpowers-validate` -- 16 tests
+- `pnpm -r test` -- core 39, sdk 22, auditor 7, relayer 6 = 74 tests
+- `npm test` (in `tools/superpowers-validate/`) -- 16 tests
 
-Total: **174 tests across four layers, all green.** CI runs them all on push (`.github/workflows/ci.yml`).
+Total: **190 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips and 1 environment-gated near-workspaces smoke.** CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
+
+## Production Gate
+
+The production-readiness script is intentionally strict and currently fails on
+the release blocker above. It fails unless:
+
+- the SDK/prover path can generate real 256-byte proofs for `deposit`, `transfer`, and `withdraw`
+- the production verifier feature compiles for `wasm32-unknown-unknown`
+- default WASM builds with mock verifier semantics are rejected
+- the optimised WASM artifact exists and fits under NEAR's deploy transaction limit
+
+Until that script passes, use only local sandbox deployments and never deposit real funds.

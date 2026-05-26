@@ -13,14 +13,14 @@ crate-type = ["cdylib", "rlib"]
 default = ["unit-testing"]
 unit-testing = ["near-sdk/unit-testing"]
 # Permissive verifier for near-workspaces sandbox tests. Allowed on WASM but
-# clearly not for production. Mutually distinct from `bb-verifier` so it can
-# never silently slip into a deployable artifact.
+# clearly not for production.
 integration-testing = []
-# Placeholder feature for the production verifier path. It currently fails
-# closed until Barretenberg verification is wired in.
+# Fail-closed legacy verifier path. Kept only so old deploy commands cannot
+# accidentally accept proofs while Barretenberg/Honk work remains out of tree.
 bb-verifier = []
-# Real Groth16 verifier using NEAR's alt_bn128 host functions. Mutually
-# exclusive with bb-verifier; either can be the deployable verifier.
+# Real Groth16 verifier using NEAR's alt_bn128 host functions. This is the
+# current deployable verifier feature, gated by the real shielded-pool prover
+# and WASM size checks in scripts/check-production-readiness.sh.
 groth16-verifier = []
 
 [dependencies]
@@ -28,20 +28,19 @@ near-sdk = { workspace = true }
 borsh = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-light-poseidon = { version = "0.2", default-features = false }
-ark-bn254 = { version = "0.4", default-features = false, features = ["scalar_field"] }
-ark-ff = { version = "0.4", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 near-workspaces = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+light-poseidon = { version = "0.2", default-features = false }
 ark-groth16 = { version = "0.4", default-features = false }
 ark-snark = { version = "0.4", default-features = false }
 ark-relations = { version = "0.4", default-features = false }
 ark-r1cs-std = { version = "0.4", default-features = false }
 ark-ec = { version = "0.4", default-features = false }
+ark-ff = { version = "0.4", default-features = false }
 ark-serialize = { version = "0.4", default-features = false }
 ark-std = { version = "0.4", default-features = false, features = ["std"] }
 ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }

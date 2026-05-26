@@ -8,9 +8,8 @@ use poseidon::poseidon::bn254;
 
 /// Merkle tree depth. MUST equal `contract::TREE_DEPTH` (currently 20).
 /// Changing this requires regenerating verifier keys + reconfiguring the
-/// contract. Set lower in development to keep proving times tractable for
-/// circuit unit tests.
-pub global MERKLE_DEPTH: u32 = 4;
+/// contract.
+pub global MERKLE_DEPTH: u32 = 20;
 
 pub struct Note {
     pub amount: Field,

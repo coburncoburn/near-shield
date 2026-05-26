@@ -22,8 +22,8 @@ use shielded_pool::groth16::{verify_groth16, Proof, VerifyingKey};
 use shielded_pool::poseidon::Field as MyField;
 
 /// Toy circuit: proves knowledge of a, b such that a * b == public.
-/// Mirrors the structure of a Honk/Groth16 deposit witness without doing
-/// the real Poseidon math, which we cover in dedicated cross-language tests.
+/// Mirrors the structure of a tiny Groth16 witness without doing the real
+/// Poseidon math, which we cover in dedicated cross-language tests.
 #[derive(Clone)]
 struct Mul {
     a: Option<Fr>,
@@ -41,13 +41,6 @@ impl ConstraintSynthesizer<Fr> for Mul {
 }
 
 // ----- EIP-196/197 wire format encoders -----
-
-fn fr_to_le_32(f: Fr) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    let bytes = f.into_bigint().to_bytes_le();
-    out[..bytes.len()].copy_from_slice(&bytes);
-    out
-}
 
 fn g1_to_eip196(p: G1Affine) -> [u8; 64] {
     let mut out = [0u8; 64];

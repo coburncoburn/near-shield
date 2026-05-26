@@ -1,4 +1,4 @@
-use crate::poseidon::Field;
+use crate::poseidon::{poseidon2, Field};
 use crate::storage::{require_storage_deposit, DEPOSIT_BYTES};
 use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
@@ -26,7 +26,6 @@ pub fn parse_hex32(s: &str) -> Option<Field> {
 ///   4. Single chunk -> that chunk.
 ///   5. Multiple chunks -> linear Poseidon-2 fold: acc = poseidon2(acc, next).
 pub fn hash_bytes_to_field(b: &[u8]) -> Field {
-    use light_poseidon::{Poseidon, PoseidonHasher};
     let chunks: Vec<Field> = b.chunks(31).map(|c| Field::from_bytes_le(c)).collect();
     if chunks.is_empty() {
         return Field::zero();
@@ -36,8 +35,7 @@ pub fn hash_bytes_to_field(b: &[u8]) -> Field {
     }
     let mut acc = chunks[0];
     for next in &chunks[1..] {
-        let mut h = Poseidon::<ark_bn254::Fr>::new_circom(2).expect("poseidon-2 init");
-        acc = Field(h.hash(&[acc.0, next.0]).expect("poseidon-2 hash"));
+        acc = poseidon2(acc, *next);
     }
     acc
 }

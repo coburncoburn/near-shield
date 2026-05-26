@@ -1,4 +1,4 @@
-use crate::deposit::{hash_bytes_to_field, parse_hex32};
+use crate::deposit::hash_bytes_to_field;
 use crate::poseidon::Field;
 use crate::storage::{require_storage_deposit, WITHDRAW_BYTES};
 use crate::verifier::{select_verifier, Verifier};
@@ -76,11 +76,11 @@ impl Contract {
         // Without this callback, a failed ft_transfer after the nullifier
         // is marked spent would lose funds permanently.
         let payout = amount.0 - relayer_fee.0;
-        Self::ext(env::current_account_id())
+        let _ = Self::ext(env::current_account_id())
             .with_static_gas(CALLBACK_GAS)
             .pay_ft_with_recovery(recipient, payout.into());
         if relayer_fee.0 > 0 {
-            Self::ext(env::current_account_id())
+            let _ = Self::ext(env::current_account_id())
                 .with_static_gas(CALLBACK_GAS)
                 .pay_ft_with_recovery(relayer, relayer_fee.0.into());
         }
@@ -107,8 +107,7 @@ impl Contract {
         recipient: AccountId,
         amount: U128,
     ) -> bool {
-        let succeeded =
-            matches!(env::promise_result(0), near_sdk::PromiseResult::Successful(_));
+        let succeeded = env::promise_result_checked(0, usize::MAX).is_ok();
         if !succeeded {
             let current = self.unclaimed_payouts.get(&recipient).copied().unwrap_or(0);
             self.unclaimed_payouts.insert(recipient.clone(), current + amount.0);
@@ -272,7 +271,7 @@ mod tests {
     #[should_panic(expected = "no unclaimed payouts")]
     fn claim_with_no_balance_rejects() {
         let mut c = setup();
-        c.claim();
+        let _ = c.claim();
     }
 
     #[test]
