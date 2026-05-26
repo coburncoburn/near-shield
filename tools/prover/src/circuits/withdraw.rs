@@ -6,7 +6,7 @@ use ark_r1cs_std::ToBitsGadget;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use crate::circuits::gadgets::{
-    commit_note, enforce_u64_geq, merkle_inclusion, nullifier_of, owner_pubkey_of,
+    commit_note, enforce_bits, enforce_u64_geq, merkle_inclusion, nullifier_of, owner_pubkey_of,
 };
 
 pub const DEPTH: usize = 20;
@@ -90,6 +90,11 @@ impl ConstraintSynthesizer<Fr> for WithdrawCircuit {
         enforce_u64_geq(&amount, &relayer_fee)?;
         view_ct_hash.enforce_equal(&vh_witness)?;
 
+        // Bind leaf_index to DEPTH bits. Without this, high bits are free while
+        // merkle_inclusion only consumes the low DEPTH bits, yet nullifier_of
+        // binds the full field value — so the same note at index i, i+2^DEPTH,
+        // ... would yield distinct nullifiers and be spendable repeatedly.
+        enforce_bits(&leaf_index, DEPTH)?;
         let bits = leaf_index.to_bits_le()?;
         merkle_inclusion(&root, &commitment, &bits[..DEPTH], &path)?;
         Ok(())
@@ -180,6 +185,28 @@ mod tests {
     fn fee_exceeds_amount_unsatisfiable() {
         let mut c = honest();
         c.relayer_fee = Some(Fr::from(101u64));
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        c.generate_constraints(cs.clone()).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    // Regression: leaf_index must be range-checked to DEPTH bits. An index of
+    // 2^DEPTH has the same low DEPTH bits as index 0, so merkle inclusion still
+    // holds, and we recompute the nullifier for it so that constraint also
+    // holds. Only the range check stands between this and a multi-spend of one
+    // note (distinct nullifiers for i, i+2^DEPTH, ...). Must be unsatisfiable.
+    #[test]
+    fn leaf_index_above_depth_unsatisfiable() {
+        let sk = Fr::from(7u64);
+        let owner = owner_of(sk);
+        let auditor = Fr::from(22u64);
+        let blinding = Fr::from(33u64);
+        let amount = Fr::from(100u64);
+        let commitment = eval4(amount, owner, auditor, blinding);
+        let evil_index = Fr::from(1u64 << DEPTH); // low DEPTH bits == 0, == index 0
+        let mut c = honest(); // merkle_root/path are for leaf at index 0
+        c.leaf_index = Some(evil_index);
+        c.nullifier = Some(null_of(sk, commitment, evil_index)); // nullifier constraint holds
         let cs = ConstraintSystem::<Fr>::new_ref();
         c.generate_constraints(cs.clone()).unwrap();
         assert!(!cs.is_satisfied().unwrap());

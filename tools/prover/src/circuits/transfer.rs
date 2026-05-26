@@ -113,6 +113,11 @@ impl ConstraintSynthesizer<Fr> for TransferCircuit {
         nullifier_of(&sk, &c_in0, &in0_idx)?.enforce_equal(&null0)?;
         nullifier_of(&sk, &c_in1, &in1_idx)?.enforce_equal(&null1)?;
 
+        // Bind both leaf indices to DEPTH bits: merkle_inclusion only consumes
+        // the low DEPTH bits, but nullifier_of binds the full field value, so an
+        // unconstrained high part would let one note produce many nullifiers.
+        enforce_bits(&in0_idx, DEPTH)?;
+        enforce_bits(&in1_idx, DEPTH)?;
         let b0 = in0_idx.to_bits_le()?;
         merkle_inclusion(&root, &c_in0, &b0[..DEPTH], &in0_path)?;
         let b1 = in1_idx.to_bits_le()?;
@@ -236,6 +241,25 @@ mod tests {
         c.merkle_root = Some(fake_root);
         c.in0_path = Some(fp0);
         c.in1_path = Some(fp1);
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        c.generate_constraints(cs.clone()).unwrap();
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    // Regression: in0_leaf_index must be range-checked to DEPTH bits. 2^DEPTH
+    // shares the low DEPTH bits of index 0, so merkle inclusion still holds; we
+    // recompute nullifier0 for it so that constraint holds too. Only the range
+    // check prevents one input note from yielding many distinct nullifiers.
+    #[test]
+    fn input_leaf_index_above_depth_unsatisfiable() {
+        let sk = Fr::from(7u64);
+        let owner = owner_of(sk);
+        let auditor = Fr::from(22u64);
+        let c_in0 = eval4(Fr::from(60u64), owner, auditor, Fr::from(1u64));
+        let evil_index = Fr::from(1u64 << DEPTH); // low DEPTH bits == 0, == index 0
+        let mut c = honest(); // in0 path/root are for leaf at index 0
+        c.in0_leaf_index = Some(evil_index);
+        c.nullifier0 = Some(null_of(sk, c_in0, evil_index)); // nullifier holds
         let cs = ConstraintSystem::<Fr>::new_ref();
         c.generate_constraints(cs.clone()).unwrap();
         assert!(!cs.is_satisfied().unwrap());
