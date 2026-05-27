@@ -209,6 +209,7 @@ export class Wallet {
       auditorPubkey: senderAuditorField,
       blinding: randomField(),
     };
+    assertValueConserved(recipientOut.amount, changeOut.amount, inputTotal);
     const c_recipient = commitNote(recipientOut);
     const c_change = commitNote(changeOut);
 
@@ -385,6 +386,7 @@ export class Wallet {
       auditorPubkey: senderAuditorField,
       blinding: changeBlinding,
     };
+    assertValueConserved(recipientOut.amount, changeOut.amount, inputTotal);
     const c_recipient = commitNote(recipientOut);
     const c_change = commitNote(changeOut);
 
@@ -570,6 +572,21 @@ function randomField(): Field {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return new Field(BigInt("0x" + hex(bytes)));
+}
+
+/**
+ * Defends the core money-conservation invariant client-side: outputs must sum
+ * to inputs and the change must be non-negative. The circuit also enforces
+ * `in0+in1 == out0+out1`, but asserting here catches a bad note-selection or a
+ * future change-formula edit before a malformed (or value-leaking) tx is built.
+ */
+function assertValueConserved(recipientAmount: bigint, changeAmount: bigint, inputTotal: bigint): void {
+  if (changeAmount < 0n) {
+    throw new Error("transfer change is negative (inputs do not cover amount)");
+  }
+  if (recipientAmount + changeAmount !== inputTotal) {
+    throw new Error("transfer value conservation violated (outputs must equal inputs)");
+  }
 }
 
 function hex(b: Uint8Array): string {

@@ -1,5 +1,11 @@
 // Shielded pool -- shared circuit primitives.
 //
+// REFERENCE ONLY: these Noir circuits compile to Honk and are NOT the deployed
+// proving path. The authoritative, deployed implementation is the arkworks
+// R1CS prover in `tools/prover` (verified on-chain via NEAR alt_bn128). Keep
+// these circuits faithful to that prover (same hashing, public-input order, and
+// range checks), but the arkworks side is the source of truth.
+//
 // Hashing is aligned with the Rust contract (`light-poseidon::new_circom`) and
 // TypeScript SDK (`poseidon-lite`): BN254 Poseidon with Circom-compatible
 // parameters. The helpers are named by arity, not by Poseidon2-the-permutation.
