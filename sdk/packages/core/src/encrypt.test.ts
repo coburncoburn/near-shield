@@ -33,6 +33,16 @@ describe("hybrid encryption", () => {
     expect(openSealed(auditorB.privateKey, sealed)).toBeNull();
   });
 
+  it("returns null (not throw) on an invalid/low-order ephemeral key", () => {
+    // x25519 shared-secret derivation throws on a low-order point (all-zero
+    // pubkey). openSealed must catch it and return null so a single poisoned
+    // ciphertext can't crash batch scanning/auditing.
+    const auditor = generateKeyPair();
+    const sealed = new Uint8Array(32 + 12 + 16 + 1); // zeroed ephemeral pubkey
+    expect(() => openSealed(auditor.privateKey, sealed)).not.toThrow();
+    expect(openSealed(auditor.privateKey, sealed)).toBeNull();
+  });
+
   it("tampered ciphertext fails authentication", () => {
     const auditor = generateKeyPair();
     const sealed = sealTo(auditor.publicKey, encodeDisclosure(sample));

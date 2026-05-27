@@ -204,3 +204,98 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
     let _ = (owner, usdc);
     Ok(())
 }
+
+/// Regression: a failed payout credits `unclaimed_payouts`; if `claim()` then
+/// also fails (recipient still unregistered with the FT contract), the funds
+/// MUST be re-credited by the recovery callback, not silently lost. Mirrors the
+/// recovery the withdraw path already has.
+#[tokio::test]
+async fn claim_re_credits_recovery_book_on_failed_payout() -> anyhow::Result<()> {
+    if std::env::var("SKIP_NEAR_INTEGRATION").is_ok() {
+        return Ok(());
+    }
+    let pool_wasm = std::fs::read(POOL_WASM_PATH)
+        .map_err(|e| anyhow::anyhow!("missing pool wasm at {POOL_WASM_PATH}: {e}"))?;
+    let worker = near_workspaces::sandbox().await?;
+    let pool = worker.dev_deploy(&pool_wasm).await?;
+    // Fake USDC: it has no `ft_transfer`, so every payout fails -> recovery path.
+    let usdc = worker.dev_create_account().await?;
+    pool.call("new")
+        .args_json(json!({
+            "owner": pool.id(),
+            "usdc_token": usdc.id(),
+            "vk_deposit": vec![1u8, 2, 3],
+            "vk_transfer": vec![1u8, 2, 3],
+            "vk_withdraw": vec![1u8, 2, 3],
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let one = near_workspaces::types::NearToken::from_near(1);
+
+    // Deposit to create a recent root (mock verifier accepts any non-empty proof).
+    let alice = worker.dev_create_account().await?;
+    alice
+        .call(pool.id(), "deposit")
+        .args_json(json!({
+            "commitment": hex32(0x01),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "note_ct": "n",
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(one)
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let root: String = pool.view("merkle_root").await?.json()?;
+
+    // Withdraw to bob; the payout ft_transfer fails, crediting unclaimed_payouts.
+    let bob = worker.dev_create_account().await?;
+    let relayer = worker.dev_create_account().await?;
+    relayer
+        .call(pool.id(), "withdraw")
+        .args_json(json!({
+            "merkle_root": root,
+            "nullifier": hex32(0xab),
+            "recipient": bob.id(),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "relayer": relayer.id(),
+            "relayer_fee": U128(500_000),
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(one)
+        .max_gas()
+        .transact()
+        .await?;
+    let owed: U128 = pool
+        .view("unclaimed_payout_of")
+        .args_json(json!({ "account": bob.id() }))
+        .await?
+        .json()?;
+    assert_eq!(owed.0, 99_500_000, "failed withdraw payout should credit bob");
+
+    // bob claims; the fake USDC ft_transfer fails AGAIN. The recovery callback
+    // must restore the book entry rather than lose the funds.
+    bob.call(pool.id(), "claim")
+        .args_json(json!({}))
+        .max_gas()
+        .transact()
+        .await?;
+    let after: U128 = pool
+        .view("unclaimed_payout_of")
+        .args_json(json!({ "account": bob.id() }))
+        .await?
+        .json()?;
+    assert_eq!(
+        after.0, 99_500_000,
+        "failed claim must re-credit the recovery book, not lose funds"
+    );
+    Ok(())
+}

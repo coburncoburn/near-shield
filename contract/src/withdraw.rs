@@ -126,7 +126,14 @@ impl Contract {
             .remove(&caller)
             .expect("no unclaimed payouts for caller");
         require!(amount > 0, "claim amount is zero");
-        self.pay_ft(caller, amount)
+        // Chain the same recovery callback the withdraw path uses: if this
+        // ft_transfer also fails, on_ft_transfer_complete re-credits the book
+        // instead of losing the funds (the entry was already removed above).
+        self.pay_ft(caller.clone(), amount).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(CALLBACK_GAS)
+                .on_ft_transfer_complete(caller, U128(amount)),
+        )
     }
 
     pub fn unclaimed_payout_of(&self, account: AccountId) -> U128 {

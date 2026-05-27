@@ -206,6 +206,42 @@ fn load_deployable_wasm() -> anyhow::Result<Vec<u8>> {
     Ok(std::fs::read(OPT_WASM_PATH)?)
 }
 
+/// Deposit via the production NEP-141 path: the configured `usdc` account calls
+/// `ft_on_transfer` with the DepositArgs payload as `msg`. This is the only
+/// deposit entry point in a deployable build (the direct `deposit()` is gated
+/// out — see `production_build_does_not_expose_direct_deposit`).
+#[allow(clippy::too_many_arguments)]
+async fn ft_deposit(
+    usdc: &near_workspaces::Account,
+    pool_id: &near_workspaces::AccountId,
+    sender_id: &near_workspaces::AccountId,
+    commitment: Field,
+    amount: u128,
+    auditor: Field,
+    view_ct: &str,
+    note_ct: &str,
+    proof: &[u8],
+) -> anyhow::Result<near_workspaces::result::ExecutionFinalResult> {
+    let msg = serde_json::to_string(&json!({
+        "commitment": fr_hex(commitment),
+        "amount": U128(amount),
+        "auditor_pubkey": fr_hex(auditor),
+        "view_ct": view_ct,
+        "note_ct": note_ct,
+        "proof": proof,
+    }))?;
+    Ok(usdc
+        .call(pool_id, "ft_on_transfer")
+        .args_json(json!({
+            "sender_id": sender_id,
+            "amount": U128(amount),
+            "msg": msg,
+        }))
+        .max_gas()
+        .transact()
+        .await?)
+}
+
 #[tokio::test]
 async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
     // ----- Off-chain note + proof construction (always runs) -------------
@@ -288,12 +324,17 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
 
     let worker = near_workspaces::sandbox().await?;
     let pool = worker.dev_deploy(&pool_wasm).await?;
+    // Stand-in USDC account: deposits arrive via `ft_on_transfer`, whose only
+    // caller-guard is `predecessor == usdc_token`. We don't deploy a full
+    // NEP-141 here — the pool's payout `ft_transfer` to this account fails
+    // harmlessly (tolerated below), which is enough to exercise the state path.
+    let usdc = worker.dev_create_account().await?;
 
     let init = pool
         .call("new")
         .args_json(json!({
             "owner": pool.id(),
-            "usdc_token": pool.id(),
+            "usdc_token": usdc.id(),
             "vk_deposit": vk_deposit,
             "vk_transfer": vk_transfer,
             "vk_withdraw": vk_withdraw,
@@ -308,22 +349,20 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
     // Storage deposit: cover the per-action byte cost with margin.
     let one_near = near_sdk::NearToken::from_near(1).as_yoctonear();
 
-    // ----- DEPOSIT (real proof) -------------------------------------------
+    // ----- DEPOSIT (real proof, via ft_on_transfer) -----------------------
     let alice = worker.dev_create_account().await?;
-    let deposit = alice
-        .call(pool.id(), "deposit")
-        .args_json(json!({
-            "commitment": fr_hex(commitment),
-            "amount": U128(amount),
-            "auditor_pubkey": fr_hex(auditor),
-            "view_ct": view_ct,
-            "note_ct": note_ct,
-            "proof": deposit_proof,
-        }))
-        .deposit(near_workspaces::types::NearToken::from_yoctonear(one_near))
-        .max_gas()
-        .transact()
-        .await?;
+    let deposit = ft_deposit(
+        &usdc,
+        pool.id(),
+        alice.id(),
+        commitment,
+        amount,
+        auditor,
+        view_ct,
+        note_ct,
+        &deposit_proof,
+    )
+    .await?;
     assert!(deposit.is_success(), "real-proof deposit failed: {deposit:#?}");
 
     let root_after_deposit: String = pool.view("merkle_root").await?.json()?;
@@ -410,7 +449,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
         .call("new")
         .args_json(json!({
             "owner": pool2.id(),
-            "usdc_token": pool2.id(),
+            "usdc_token": usdc.id(),
             "vk_deposit": std::fs::read(format!("{KEY_DIR}/deposit.vk"))?,
             "vk_transfer": std::fs::read(format!("{KEY_DIR}/transfer.vk"))?,
             "vk_withdraw": std::fs::read(format!("{KEY_DIR}/withdraw.vk"))?,
@@ -442,21 +481,19 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
             "viewCtHashWitness": fr_hex(vh),
         });
         let proof = prove("deposit", &pi, wit);
-        alice
-            .call(pool2.id(), "deposit")
-            .args_json(json!({
-                "commitment": fr_hex(c),
-                "amount": U128(amt),
-                "auditor_pubkey": fr_hex(t_auditor),
-                "view_ct": vct,
-                "note_ct": nct,
-                "proof": proof,
-            }))
-            .deposit(near_workspaces::types::NearToken::from_yoctonear(one_near))
-            .max_gas()
-            .transact()
-            .await?
-            .into_result()?;
+        ft_deposit(
+            &usdc,
+            pool2.id(),
+            alice.id(),
+            c,
+            amt,
+            t_auditor,
+            vct,
+            nct,
+            &proof,
+        )
+        .await?
+        .into_result()?;
     }
 
     let transfer_root: String = pool2.view("merkle_root").await?.json()?;
@@ -543,5 +580,62 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
         .json()?;
     assert!(n0_spent && n1_spent, "transfer nullifiers must be spent");
 
+    Ok(())
+}
+
+/// Security regression: the direct `deposit()` entry point inserts a commitment
+/// into the tree with NO backing USDC transfer — the deposit proof only attests
+/// commitment well-formedness (no secret, no funds), and proving keys are
+/// public, so anyone could mint unbacked notes and drain the pool. Deposits MUST
+/// go through `ft_on_transfer`, which binds the amount to a real token transfer.
+/// A deployable (groth16-verifier) build must therefore NOT expose `deposit()`.
+#[tokio::test]
+async fn production_build_does_not_expose_direct_deposit() -> anyhow::Result<()> {
+    if skip() {
+        eprintln!("SKIP_NEAR_INTEGRATION set; skipping sandbox");
+        return Ok(());
+    }
+    let pool_wasm = load_deployable_wasm()?;
+    let worker = near_workspaces::sandbox().await?;
+    let pool = worker.dev_deploy(&pool_wasm).await?;
+    let usdc = worker.dev_create_account().await?;
+    pool.call("new")
+        .args_json(json!({
+            "owner": pool.id(),
+            "usdc_token": usdc.id(),
+            "vk_deposit": std::fs::read(format!("{KEY_DIR}/deposit.vk"))?,
+            "vk_transfer": std::fs::read(format!("{KEY_DIR}/transfer.vk"))?,
+            "vk_withdraw": std::fs::read(format!("{KEY_DIR}/withdraw.vk"))?,
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let one_near = near_sdk::NearToken::from_near(1).as_yoctonear();
+    let attempt = usdc
+        .call(pool.id(), "deposit")
+        .args_json(json!({
+            "commitment": fr_hex(Field::from_u64(1)),
+            "amount": U128(1_000_000),
+            "auditor_pubkey": fr_hex(Field::from_u64(2)),
+            "view_ct": "v",
+            "note_ct": "n",
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(near_workspaces::types::NearToken::from_yoctonear(one_near))
+        .max_gas()
+        .transact()
+        .await?;
+
+    let detail = format!("{attempt:#?}");
+    assert!(
+        attempt.is_failure(),
+        "direct deposit must not succeed in a deployable build: {detail}"
+    );
+    assert!(
+        detail.contains("MethodResolveError") || detail.contains("MethodNotFound"),
+        "direct deposit() must be absent (expected MethodNotFound) in a deployable build: {detail}"
+    );
     Ok(())
 }

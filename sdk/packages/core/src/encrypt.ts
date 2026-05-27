@@ -50,10 +50,13 @@ export function openSealed(recipientPriv: Uint8Array, sealed: Uint8Array): Uint8
   const ephPub = sealed.subarray(0, 32);
   const nonce = sealed.subarray(32, 44);
   const ct = sealed.subarray(44);
-  const recipientPub = x25519.getPublicKey(recipientPriv);
-  const shared = x25519.getSharedSecret(recipientPriv, ephPub);
-  const key = deriveSymmetricKey(shared, ephPub, recipientPub);
   try {
+    // getSharedSecret throws on an invalid/low-order ephemeral pubkey, so it
+    // must be inside the try: a crafted ciphertext must yield null, never throw,
+    // or one poisoned log entry halts batch scanning/auditing for everyone.
+    const recipientPub = x25519.getPublicKey(recipientPriv);
+    const shared = x25519.getSharedSecret(recipientPriv, ephPub);
+    const key = deriveSymmetricKey(shared, ephPub, recipientPub);
     return chacha20poly1305(key, nonce).decrypt(ct);
   } catch {
     return null;

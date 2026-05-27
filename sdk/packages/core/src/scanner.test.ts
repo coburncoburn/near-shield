@@ -69,6 +69,29 @@ describe("scanner", () => {
     expect(scanNotes(me.privateKey, [ct])).toHaveLength(0);
   });
 
+  it("a poisoned ephemeral key in one ciphertext does not abort the batch", () => {
+    // An attacker can post a log entry whose ephemeral pubkey is a low-order
+    // point; x25519 shared-secret derivation throws on it. The scanner must
+    // skip that entry and still recover legitimate notes, or one malicious log
+    // halts scanning for everyone.
+    const me = generateKeyPair();
+    const note = {
+      amount: 42n,
+      ownerPubkey: Field.fromU64(1),
+      auditorPubkey: Field.fromU64(1),
+      blinding: Field.fromU64(1),
+    };
+    const poison: NoteCiphertext = {
+      leafIndex: 0n,
+      sealed: new Uint8Array(32 + 12 + 16 + 1), // all-zero ephemeral pubkey
+    };
+    const good = makeCt(me.publicKey, note, 1n);
+    const found = scanNotes(me.privateKey, [poison, good]);
+    expect(found).toHaveLength(1);
+    expect(found[0].note.amount).toBe(42n);
+    expect(found[0].leafIndex).toBe(1n);
+  });
+
   it("re-scanning the same ciphertexts is idempotent", () => {
     const me = generateKeyPair();
     const note = {
