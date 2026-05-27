@@ -103,6 +103,7 @@ export class Wallet {
   readonly viewingKey: KeyPair;
   readonly prover: Prover;
   private notes: DiscoveredNote[] = [];
+  private spent = new Set<bigint>();
 
   constructor(private readonly config: WalletConfig) {
     if (config.seed.length < 32) {
@@ -142,8 +143,21 @@ export class Wallet {
     return found.length;
   }
 
+  /**
+   * Marks the note at `leafIndex` as spent so it is excluded from `balance()`
+   * and input selection. Callers invoke this after a transfer/withdraw is
+   * confirmed on-chain (the wallet builds but does not submit txs, so it can't
+   * know a spend landed on its own).
+   */
+  markSpent(leafIndex: bigint): void {
+    this.spent.add(leafIndex);
+  }
+
   balance(): bigint {
-    return this.notes.reduce((sum, n) => sum + n.note.amount, 0n);
+    return this.notes.reduce(
+      (sum, n) => (this.spent.has(n.leafIndex) ? sum : sum + n.note.amount),
+      0n
+    );
   }
 
   buildDeposit(req: DepositRequest): BuiltTx {
@@ -252,7 +266,9 @@ export class Wallet {
     if (req.relayerFee > req.amount) {
       throw new Error("relayer_fee exceeds amount");
     }
-    const note = this.notes.find((n) => n.note.amount === req.amount);
+    const note = this.notes.find(
+      (n) => n.note.amount === req.amount && !this.spent.has(n.leafIndex)
+    );
     if (!note) {
       throw new Error(`no unspent note with amount exactly ${req.amount} (v0 whole-note withdraw)`);
     }
@@ -486,7 +502,9 @@ export class Wallet {
     if (!req.merkleRoot) {
       throw new Error("buildWithdrawProved requires req.merkleRoot");
     }
-    const note = this.notes.find((n) => n.note.amount === req.amount);
+    const note = this.notes.find(
+      (n) => n.note.amount === req.amount && !this.spent.has(n.leafIndex)
+    );
     if (!note) {
       throw new Error(`no unspent note with amount exactly ${req.amount} (v0 whole-note withdraw)`);
     }
@@ -558,6 +576,7 @@ export class Wallet {
       for (let j = i + 1; j < this.notes.length; j++) {
         const a = this.notes[i];
         const b = this.notes[j];
+        if (this.spent.has(a.leafIndex) || this.spent.has(b.leafIndex)) continue;
         if (!a.note.auditorPubkey.equals(b.note.auditorPubkey)) continue;
         if (!sameBytes(a.auditorPubkeyBytes, b.auditorPubkeyBytes)) continue;
         if (a.note.amount + b.note.amount >= amount) {

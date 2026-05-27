@@ -73,13 +73,20 @@ export class RelayerService {
         `relayer mismatch: request says ${req.relayer}, this relayer is ${this.config.nearAccountId}`
       );
     }
-    if (BigInt(req.relayerFee) !== this.config.feeUsdcBase) {
+    // Parse caller-supplied amounts defensively: bad input must surface as a
+    // RelayerError, not an uncaught BigInt SyntaxError.
+    const fee = parseBaseUnits(req.relayerFee, "relayerFee");
+    const amount = parseBaseUnits(req.amount, "amount");
+    if (fee !== this.config.feeUsdcBase) {
       throw new RelayerError(
         `fee mismatch: request says ${req.relayerFee}, quoted ${this.config.feeUsdcBase}`
       );
     }
-    if (BigInt(req.relayerFee) > BigInt(req.amount)) {
+    if (fee > amount) {
       throw new RelayerError("relayer_fee exceeds amount");
+    }
+    if (!req.recipient || req.recipient.length === 0) {
+      throw new RelayerError("recipient must not be empty");
     }
     if (!req.proof || req.proof.length === 0) {
       throw new RelayerError("proof must not be empty");
@@ -87,4 +94,18 @@ export class RelayerService {
     const txHash = await this.submitter.submitWithdraw(req);
     return { txHash };
   }
+}
+
+/** Parses a non-negative base-units decimal string; RelayerError on bad input. */
+function parseBaseUnits(s: string, field: string): bigint {
+  let v: bigint;
+  try {
+    v = BigInt(s);
+  } catch {
+    throw new RelayerError(`${field} is not a valid integer: ${JSON.stringify(s)}`);
+  }
+  if (v < 0n) {
+    throw new RelayerError(`${field} must be non-negative: ${s}`);
+  }
+  return v;
 }

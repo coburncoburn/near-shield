@@ -59,6 +59,30 @@ describe("Wallet", () => {
     expect(w.balance()).toBe(100n);
   });
 
+  it("excludes spent notes from balance and selection", () => {
+    const w = new Wallet(makeConfig());
+    const auditor = generateKeyPair();
+    const d0 = w.buildDeposit({ amount: 40n, auditorPubkey: auditor.publicKey });
+    const d1 = w.buildDeposit({ amount: 60n, auditorPubkey: auditor.publicKey });
+    w.scan([
+      { leafIndex: 0n, sealed: d0.noteCiphertexts[0] },
+      { leafIndex: 1n, sealed: d1.noteCiphertexts[0] },
+    ]);
+    expect(w.balance()).toBe(100n);
+
+    w.markSpent(0n);
+    expect(w.balance()).toBe(60n);
+    // The spent 40n note can no longer back a whole-note withdraw.
+    expect(() =>
+      w.buildWithdraw({
+        amount: 40n,
+        recipientNearAccount: "r.near",
+        relayer: "rel.near",
+        relayerFee: 1n,
+      })
+    ).toThrow();
+  });
+
   it("buildWithdraw refuses when no matching note is held", () => {
     const cfg = makeConfig();
     const w = new Wallet(cfg);
