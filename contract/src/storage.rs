@@ -6,14 +6,15 @@
 //!   - `withdraw`: 1 nullifier entry + log bytes
 //!
 //! NEAR's storage staking model requires the caller to attach NEAR that covers
-//! the bytes added. These constants are upper-bound estimates with margin; the
-//! contract refunds the excess in a future patch (todo: refund to predecessor).
+//! the bytes added. These constants are upper-bound estimates with margin; any
+//! excess attached is refunded to the caller so they needn't attach an exact
+//! amount.
 //!
-//! Rationale: without this, an attacker can spam free deposits to inflate the
-//! Merkle tree to its 1M-leaf capacity, exhausting storage cost on the pool
-//! account (which the deployer pays).
+//! Rationale: without the requirement, an attacker can spam free deposits to
+//! inflate the Merkle tree to its 1M-leaf capacity, exhausting storage cost on
+//! the pool account (which the deployer pays).
 
-use near_sdk::{env, require, NearToken};
+use near_sdk::{env, require, NearToken, Promise};
 
 /// NEAR storage cost per byte: 1e19 yoctoNEAR (= 10^-5 NEAR).
 const YOCTO_PER_BYTE: u128 = 10_000_000_000_000_000_000;
@@ -37,6 +38,15 @@ pub fn require_storage_deposit(bytes: u64) {
             attached.as_yoctonear()
         )
     );
+    // Refund any excess so callers don't need to attach an exact amount. The
+    // refund only lands if the enclosing call succeeds (a panic rolls back all
+    // scheduled promises along with state).
+    let excess = attached.as_yoctonear() - required.as_yoctonear();
+    if excess > 0 {
+        // Fire-and-forget refund; scheduled now and rolled back if the call panics.
+        let _refund = Promise::new(env::predecessor_account_id())
+            .transfer(NearToken::from_yoctonear(excess));
+    }
 }
 
 #[cfg(test)]

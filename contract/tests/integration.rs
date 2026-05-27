@@ -205,6 +205,61 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
     Ok(())
 }
 
+/// The per-action storage deposit only needs to cover the bytes written; any
+/// excess attached must be refunded to the caller rather than retained.
+#[tokio::test]
+async fn deposit_refunds_excess_storage_deposit() -> anyhow::Result<()> {
+    if std::env::var("SKIP_NEAR_INTEGRATION").is_ok() {
+        return Ok(());
+    }
+    let pool_wasm = std::fs::read(POOL_WASM_PATH)
+        .map_err(|e| anyhow::anyhow!("missing pool wasm at {POOL_WASM_PATH}: {e}"))?;
+    let worker = near_workspaces::sandbox().await?;
+    let pool = worker.dev_deploy(&pool_wasm).await?;
+    let usdc = worker.dev_create_account().await?;
+    pool.call("new")
+        .args_json(json!({
+            "owner": pool.id(),
+            "usdc_token": usdc.id(),
+            "vk_deposit": vec![1u8, 2, 3],
+            "vk_transfer": vec![1u8, 2, 3],
+            "vk_withdraw": vec![1u8, 2, 3],
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice = worker.dev_create_account().await?;
+    let before = alice.view_account().await?.balance;
+    alice
+        .call(pool.id(), "deposit")
+        .args_json(json!({
+            "commitment": hex32(0x01),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "note_ct": "n",
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let after = alice.view_account().await?.balance;
+
+    // DEPOSIT_BYTES (512) costs ~0.005 NEAR; with the refund alice should be out
+    // only that plus gas. Without it she'd be down the full ~1 NEAR attached.
+    let spent = before.as_yoctonear() - after.as_yoctonear();
+    let cap = near_workspaces::types::NearToken::from_millinear(100).as_yoctonear();
+    assert!(
+        spent < cap,
+        "excess storage deposit not refunded: spent {spent} yoctoNEAR (cap {cap})"
+    );
+    Ok(())
+}
+
 /// Regression: a failed payout credits `unclaimed_payouts`; if `claim()` then
 /// also fails (recipient still unregistered with the FT contract), the funds
 /// MUST be re-credited by the recovery callback, not silently lost. Mirrors the

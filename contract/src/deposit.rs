@@ -69,6 +69,7 @@ impl Contract {
         use crate::validation::{
             check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
         };
+        assert!(!self.paused, "contract is paused");
         check_proof_bytes(&args.proof);
         check_ciphertext_bytes(&args.view_ct, "view_ct");
         check_ciphertext_bytes(&args.note_ct, "note_ct");

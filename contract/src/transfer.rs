@@ -23,6 +23,7 @@ impl Contract {
         use crate::validation::{
             check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
         };
+        assert!(!self.paused, "contract is paused");
         require_storage_deposit(TRANSFER_BYTES);
         check_proof_bytes(&proof);
         for (i, v) in view_cts.iter().enumerate() {

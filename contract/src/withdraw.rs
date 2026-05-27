@@ -29,6 +29,7 @@ impl Contract {
         use crate::validation::{
             check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
         };
+        require!(!self.paused, "contract is paused");
         require_storage_deposit(WITHDRAW_BYTES);
         check_proof_bytes(&proof);
         check_ciphertext_bytes(&view_ct, "view_ct");
@@ -145,6 +146,7 @@ impl Contract {
 mod tests {
     use crate::poseidon::Field;
     use crate::Contract;
+    use near_sdk::json_types::U128;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use near_sdk::AccountId;
@@ -160,6 +162,47 @@ mod tests {
             vec![1, 2, 3],
             vec![1, 2, 3],
         )
+    }
+
+    /// Build a contract whose owner is also the current predecessor, so
+    /// `set_paused` is callable, with 1 NEAR attached for storage.
+    fn setup_as_owner() -> Contract {
+        let mut ctx = VMContextBuilder::new();
+        ctx.predecessor_account_id("owner.near".parse::<AccountId>().unwrap())
+            .attached_deposit(near_sdk::NearToken::from_near(1));
+        testing_env!(ctx.build());
+        Contract::new(
+            "owner.near".parse::<AccountId>().unwrap(),
+            "usdc.near".parse::<AccountId>().unwrap(),
+            vec![1, 2, 3],
+            vec![1, 2, 3],
+            vec![1, 2, 3],
+        )
+    }
+
+    #[test]
+    #[should_panic(expected = "only owner may pause")]
+    fn set_paused_rejects_non_owner() {
+        let mut c = setup(); // default predecessor != owner.near
+        c.set_paused(true);
+    }
+
+    #[test]
+    #[should_panic(expected = "contract is paused")]
+    fn paused_contract_rejects_withdraw() {
+        let mut c = setup_as_owner();
+        c.set_paused(true);
+        c.withdraw(
+            hex32(0x07),
+            hex32(0xab),
+            "bob.near".parse::<AccountId>().unwrap(),
+            U128(100),
+            hex32(0x02),
+            "v".into(),
+            "rel.near".parse::<AccountId>().unwrap(),
+            U128(1),
+            vec![1, 2, 3],
+        );
     }
 
     fn hex32(byte: u8) -> String {
