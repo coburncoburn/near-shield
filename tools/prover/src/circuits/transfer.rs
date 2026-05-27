@@ -113,6 +113,11 @@ impl ConstraintSynthesizer<Fr> for TransferCircuit {
         nullifier_of(&sk, &c_in0, &in0_idx)?.enforce_equal(&null0)?;
         nullifier_of(&sk, &c_in1, &in1_idx)?.enforce_equal(&null1)?;
 
+        // The two inputs must be distinct notes; equal nullifiers would let one
+        // note be double-counted. Enforced in-circuit so soundness doesn't rely
+        // solely on the contract's `assert_ne!(n0, n1)`.
+        null0.enforce_not_equal(&null1)?;
+
         // Bind both leaf indices to DEPTH bits: merkle_inclusion only consumes
         // the low DEPTH bits, but nullifier_of binds the full field value, so an
         // unconstrained high part would let one note produce many nullifiers.
@@ -244,6 +249,45 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         c.generate_constraints(cs.clone()).unwrap();
         assert!(!cs.is_satisfied().unwrap());
+    }
+
+    // Both inputs are the SAME note (same commitment + leaf), so
+    // nullifier0 == nullifier1. Without an in-circuit distinctness check the
+    // prover could double-count one note (the contract also checks this, but the
+    // circuit must be sound on its own). Must be unsatisfiable.
+    #[test]
+    fn same_input_note_unsatisfiable() {
+        let sk = Fr::from(7u64);
+        let owner = owner_of(sk);
+        let auditor = Fr::from(22u64);
+        let recip_auditor = Fr::from(33u64);
+        let amt = Fr::from(60u64);
+        let blind = Fr::from(1u64);
+        let c_in = eval4(amt, owner, auditor, blind);
+        let n = null_of(sk, c_in, Fr::from(0u64));
+        // Tree holds the same commitment at both leaves; path0 includes leaf 0.
+        let (root, path0, _path1) = tree_two(c_in, c_in);
+        // Outputs sum to 120 = 60 + 60 (the double-counted total).
+        let cout0 = eval4(Fr::from(120u64), Fr::from(100u64), recip_auditor, Fr::from(3u64));
+        let cout1 = eval4(Fr::from(0u64), owner, recip_auditor, Fr::from(4u64));
+        let circuit = TransferCircuit {
+            merkle_root: Some(root), nullifier0: Some(n), nullifier1: Some(n),
+            commitment_out0: Some(cout0), commitment_out1: Some(cout1),
+            auditor_pubkey: Some(auditor), recipient_auditor_pubkey: Some(recip_auditor),
+            view_ct_hash_sender: Some(Fr::from(13u64)), view_ct_hash_recipient: Some(Fr::from(14u64)),
+            in0_amount: Some(amt), in0_owner_pubkey: Some(owner), in0_blinding: Some(blind), in0_leaf_index: Some(Fr::from(0u64)), in0_path: Some(path0),
+            in1_amount: Some(amt), in1_owner_pubkey: Some(owner), in1_blinding: Some(blind), in1_leaf_index: Some(Fr::from(0u64)), in1_path: Some(path0),
+            spending_key: Some(sk),
+            out0_amount: Some(Fr::from(120u64)), out0_owner_pubkey: Some(Fr::from(100u64)), out0_blinding: Some(Fr::from(3u64)),
+            out1_amount: Some(Fr::from(0u64)), out1_owner_pubkey: Some(owner), out1_blinding: Some(Fr::from(4u64)),
+            view_ct_hash_sender_witness: Some(Fr::from(13u64)), view_ct_hash_recipient_witness: Some(Fr::from(14u64)),
+        };
+        // `enforce_not_equal` proves distinctness via an inverse of (n0 - n1);
+        // when they're equal that inverse doesn't exist, so the circuit rejects
+        // it either as a synthesis error or an unsatisfiable system.
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let synthesized = circuit.generate_constraints(cs.clone());
+        assert!(synthesized.is_err() || !cs.is_satisfied().unwrap());
     }
 
     // Regression: in0_leaf_index must be range-checked to DEPTH bits. 2^DEPTH
