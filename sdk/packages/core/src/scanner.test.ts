@@ -65,7 +65,7 @@ describe("scanner", () => {
       blinding: Field.fromU64(1),
     };
     const ct = makeCt(me.publicKey, note, 0n);
-    ct.sealed[60] ^= 0xff;
+    ct.sealed[80] ^= 0xff; // corrupt the ciphertext region (eph+commit+nonce = 76)
     expect(scanNotes(me.privateKey, [ct])).toHaveLength(0);
   });
 
@@ -83,7 +83,7 @@ describe("scanner", () => {
     };
     const poison: NoteCiphertext = {
       leafIndex: 0n,
-      sealed: new Uint8Array(32 + 12 + 16 + 1), // all-zero ephemeral pubkey
+      sealed: new Uint8Array(32 + 32 + 12 + 16 + 1), // valid length, all-zero ephemeral pubkey
     };
     const good = makeCt(me.publicKey, note, 1n);
     const found = scanNotes(me.privateKey, [poison, good]);

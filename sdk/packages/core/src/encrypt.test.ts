@@ -40,7 +40,7 @@ describe("hybrid encryption", () => {
     // pubkey). openSealed must catch it and return null so a single poisoned
     // ciphertext can't crash batch scanning/auditing.
     const auditor = generateKeyPair();
-    const sealed = new Uint8Array(32 + 12 + 16 + 1); // zeroed ephemeral pubkey
+    const sealed = new Uint8Array(32 + 32 + 12 + 16 + 1); // valid length, zeroed ephemeral pubkey
     expect(() => openSealed(auditor.privateKey, sealed, SEAL_CONTEXT_VIEW)).not.toThrow();
     expect(openSealed(auditor.privateKey, sealed, SEAL_CONTEXT_VIEW)).toBeNull();
   });
@@ -48,8 +48,16 @@ describe("hybrid encryption", () => {
   it("tampered ciphertext fails authentication", () => {
     const auditor = generateKeyPair();
     const sealed = sealTo(auditor.publicKey, encodeDisclosure(sample), SEAL_CONTEXT_VIEW);
-    // Flip a byte inside the ciphertext region (past the ephemeral pub + nonce)
-    sealed[60] ^= 0xff;
+    // Flip a byte in the ciphertext region (past eph(32)+commit(32)+nonce(12)=76).
+    sealed[80] ^= 0xff;
+    expect(openSealed(auditor.privateKey, sealed, SEAL_CONTEXT_VIEW)).toBeNull();
+  });
+
+  it("rejects a tampered key-commitment (committing AEAD)", () => {
+    const auditor = generateKeyPair();
+    const sealed = sealTo(auditor.publicKey, encodeDisclosure(sample), SEAL_CONTEXT_VIEW);
+    // Flip a byte in the key-commitment region (offset 32..63).
+    sealed[40] ^= 0xff;
     expect(openSealed(auditor.privateKey, sealed, SEAL_CONTEXT_VIEW)).toBeNull();
   });
 
