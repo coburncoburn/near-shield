@@ -1,4 +1,4 @@
-import { decodeDisclosure, openSealed, type ViewDisclosure } from "@shielded-near/core";
+import { decodeDisclosure, openSealed, SEAL_CONTEXT_VIEW, type ViewDisclosure } from "@shielded-near/core";
 
 /**
  * One on-chain event with all the auditor disclosure ciphertexts the contract
@@ -40,7 +40,7 @@ export class AuditorIndex {
     let added = 0;
     for (const ev of events) {
       for (const ct of ev.viewCiphertexts) {
-        const plain = openSealed(this.privateKey, ct);
+        const plain = openSealed(this.privateKey, ct, SEAL_CONTEXT_VIEW);
         if (!plain) continue;
         try {
           const disclosure = decodeDisclosure(plain);
@@ -81,7 +81,7 @@ export class AuditorIndex {
     ct: Uint8Array,
     expected: ViewDisclosure
   ): boolean {
-    const plain = openSealed(this.privateKey, ct);
+    const plain = openSealed(this.privateKey, ct, SEAL_CONTEXT_VIEW);
     if (!plain) return false;
     try {
       const got = decodeDisclosure(plain);

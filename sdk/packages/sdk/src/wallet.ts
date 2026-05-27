@@ -1,6 +1,7 @@
 import { x25519 } from "@noble/curves/ed25519";
 import {
   Field,
+  auditorPubkeyToField,
   commitNote,
   computeNullifier,
   encodeDisclosure,
@@ -10,6 +11,8 @@ import {
   poseidon2,
   scanNotes,
   sealTo,
+  SEAL_CONTEXT_NOTE,
+  SEAL_CONTEXT_VIEW,
   type DiscoveredNote,
   type KeyPair,
   type Note,
@@ -144,7 +147,7 @@ export class Wallet {
   }
 
   buildDeposit(req: DepositRequest): BuiltTx {
-    const auditorPubkeyField = pubkeyToField(req.auditorPubkey);
+    const auditorPubkeyField = auditorPubkeyToField(req.auditorPubkey);
     const blinding = randomField();
     const note: Note = {
       amount: req.amount,
@@ -161,8 +164,8 @@ export class Wallet {
       memo: "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure));
-    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey));
+    const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
+    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey), SEAL_CONTEXT_NOTE);
     return {
       method: "deposit",
       publicInputs: {
@@ -196,7 +199,7 @@ export class Wallet {
     const nullifier1 = computeNullifier(this.spendingKey, input1.commitment, input1.leafIndex);
     const inputTotal = input0.note.amount + input1.note.amount;
 
-    const recipientAuditorField = pubkeyToField(req.recipientAuditorPubkey);
+    const recipientAuditorField = auditorPubkeyToField(req.recipientAuditorPubkey);
     const recipientOut: Note = {
       amount: req.amount,
       ownerPubkey: req.recipientOwnerPubkey,
@@ -221,13 +224,13 @@ export class Wallet {
       memo: req.memo ?? "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure));
-    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure));
+    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
+    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
 
     // Note ciphertexts: one to recipient's vk (for the recipient output) and
     // one to the sender's own vk (for the change output).
-    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey));
-    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey));
+    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey), SEAL_CONTEXT_NOTE);
+    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey), SEAL_CONTEXT_NOTE);
 
     return {
       method: "transfer",
@@ -266,7 +269,7 @@ export class Wallet {
     if (!note.auditorPubkeyBytes) {
       throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
     }
-    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure));
+    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
     return {
       method: "withdraw",
       publicInputs: {
@@ -290,7 +293,7 @@ export class Wallet {
    * `proof` is the full 256-byte EIP-196/197 serialisation.
    */
   async buildDepositProved(req: DepositRequest, prover: Prover): Promise<BuiltTx> {
-    const auditorPubkeyField = pubkeyToField(req.auditorPubkey);
+    const auditorPubkeyField = auditorPubkeyToField(req.auditorPubkey);
     const blinding = randomField();
     const note: Note = {
       amount: req.amount,
@@ -307,8 +310,8 @@ export class Wallet {
       memo: "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure));
-    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey));
+    const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
+    const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey), SEAL_CONTEXT_NOTE);
 
     const viewCtHashHex = hashBytesToField(viewCt).toHex();
 
@@ -371,7 +374,7 @@ export class Wallet {
     const nullifier1 = computeNullifier(this.spendingKey, input1.commitment, input1.leafIndex);
     const inputTotal = input0.note.amount + input1.note.amount;
 
-    const recipientAuditorField = pubkeyToField(req.recipientAuditorPubkey);
+    const recipientAuditorField = auditorPubkeyToField(req.recipientAuditorPubkey);
     const recipientBlinding = randomField();
     const changeBlinding = randomField();
     const recipientOut: Note = {
@@ -398,11 +401,11 @@ export class Wallet {
       memo: req.memo ?? "",
       timestamp: Math.floor(Date.now() / 1000),
     };
-    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure));
-    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure));
+    const viewCtSender = sealTo(senderAuditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
+    const viewCtRecipient = sealTo(req.recipientAuditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
 
-    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey));
-    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey));
+    const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey), SEAL_CONTEXT_NOTE);
+    const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey), SEAL_CONTEXT_NOTE);
 
     const viewCtHashSenderHex = hashBytesToField(viewCtSender).toHex();
     const viewCtHashRecipientHex = hashBytesToField(viewCtRecipient).toHex();
@@ -500,7 +503,7 @@ export class Wallet {
     if (!note.auditorPubkeyBytes) {
       throw new Error("input note is missing auditor pubkey bytes; rescan notes emitted by the current SDK");
     }
-    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure));
+    const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
 
     const viewCtHashHex = hashBytesToField(viewCt).toHex();
 
@@ -591,11 +594,6 @@ function assertValueConserved(recipientAmount: bigint, changeAmount: bigint, inp
 
 function hex(b: Uint8Array): string {
   return Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-function pubkeyToField(pk: Uint8Array): Field {
-  if (pk.length !== 32) throw new Error("pubkey must be 32 bytes");
-  return new Field(BigInt("0x" + hex(pk)));
 }
 
 function deriveX25519Pub(priv: Uint8Array): Uint8Array {

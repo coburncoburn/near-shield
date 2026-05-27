@@ -2,6 +2,7 @@ import { x25519 } from "@noble/curves/ed25519";
 import { chacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { sha256 } from "@noble/hashes/sha256";
+import { hkdf } from "@noble/hashes/hkdf";
 
 /**
  * Hybrid X25519 + ChaCha20-Poly1305 sealed-box style encryption.
@@ -9,11 +10,19 @@ import { sha256 } from "@noble/hashes/sha256";
  * ciphertexts (encrypted to the recipient's viewing key).
  *
  * Wire format (sealed): || ephemeral_pubkey (32) || nonce (12) || ct || tag (16) ||
+ *
+ * Every seal/open is domain-separated by a `context` label (HKDF `info`), so a
+ * ciphertext sealed for one purpose (e.g. a note) cannot be opened in another
+ * (e.g. a disclosure) even when the same recipient key is reused across roles.
  */
 export interface KeyPair {
   publicKey: Uint8Array;   // 32 bytes
   privateKey: Uint8Array;  // 32 bytes
 }
+
+/** Domain-separation labels — pass the matching one to sealTo/openSealed. */
+export const SEAL_CONTEXT_NOTE = "shielded-pool/note-v1";
+export const SEAL_CONTEXT_VIEW = "shielded-pool/view-v1";
 
 export function generateKeyPair(): KeyPair {
   const privateKey = x25519.utils.randomPrivateKey();
@@ -21,21 +30,27 @@ export function generateKeyPair(): KeyPair {
   return { privateKey, publicKey };
 }
 
-function deriveSymmetricKey(shared: Uint8Array, ephPub: Uint8Array, recipientPub: Uint8Array): Uint8Array {
-  // HKDF-lite: SHA256(shared || ephPub || recipientPub) → 32-byte key.
-  const buf = new Uint8Array(shared.length + ephPub.length + recipientPub.length);
-  buf.set(shared, 0);
-  buf.set(ephPub, shared.length);
-  buf.set(recipientPub, shared.length + ephPub.length);
-  return sha256(buf);
+function deriveSymmetricKey(
+  shared: Uint8Array,
+  ephPub: Uint8Array,
+  recipientPub: Uint8Array,
+  context: string
+): Uint8Array {
+  // HKDF(SHA256): extract with salt = ephPub||recipientPub, expand with the
+  // context label as `info` for domain separation. ChaCha20-Poly1305 is not
+  // key-committing; the context only prevents cross-purpose ciphertext reuse.
+  const salt = new Uint8Array(ephPub.length + recipientPub.length);
+  salt.set(ephPub, 0);
+  salt.set(recipientPub, ephPub.length);
+  return hkdf(sha256, shared, salt, new TextEncoder().encode(context), 32);
 }
 
-export function sealTo(recipientPub: Uint8Array, plaintext: Uint8Array): Uint8Array {
+export function sealTo(recipientPub: Uint8Array, plaintext: Uint8Array, context: string): Uint8Array {
   if (recipientPub.length !== 32) throw new Error("recipientPub must be 32 bytes");
   const ephPriv = x25519.utils.randomPrivateKey();
   const ephPub = x25519.getPublicKey(ephPriv);
   const shared = x25519.getSharedSecret(ephPriv, recipientPub);
-  const key = deriveSymmetricKey(shared, ephPub, recipientPub);
+  const key = deriveSymmetricKey(shared, ephPub, recipientPub, context);
   const nonce = randomBytes(12);
   const ct = chacha20poly1305(key, nonce).encrypt(plaintext);
   const out = new Uint8Array(32 + 12 + ct.length);
@@ -45,7 +60,7 @@ export function sealTo(recipientPub: Uint8Array, plaintext: Uint8Array): Uint8Ar
   return out;
 }
 
-export function openSealed(recipientPriv: Uint8Array, sealed: Uint8Array): Uint8Array | null {
+export function openSealed(recipientPriv: Uint8Array, sealed: Uint8Array, context: string): Uint8Array | null {
   if (sealed.length < 32 + 12 + 16) return null;
   const ephPub = sealed.subarray(0, 32);
   const nonce = sealed.subarray(32, 44);
@@ -56,7 +71,7 @@ export function openSealed(recipientPriv: Uint8Array, sealed: Uint8Array): Uint8
     // or one poisoned log entry halts batch scanning/auditing for everyone.
     const recipientPub = x25519.getPublicKey(recipientPriv);
     const shared = x25519.getSharedSecret(recipientPriv, ephPub);
-    const key = deriveSymmetricKey(shared, ephPub, recipientPub);
+    const key = deriveSymmetricKey(shared, ephPub, recipientPub, context);
     return chacha20poly1305(key, nonce).decrypt(ct);
   } catch {
     return null;
