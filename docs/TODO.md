@@ -1,0 +1,66 @@
+# TODO — path to mainnet
+
+Status: **sandbox-functional, NOT mainnet-ready.** The cryptographic core, the
+contract, the SDK, and the arkworks prover are implemented and tested; a
+pre-production review closed the issues listed under "Done" below. What remains
+before real funds are the items in **A** (mostly external) and **C** (CI/process).
+
+See `docs/ARCHITECTURE.md` for the system overview and
+`docs/superpowers/specs/2026-05-26-real-groth16-prover-e2e.md` for the original
+path-to-production spec.
+
+## A. Mainnet blockers (mostly NOT codeable here)
+
+1. **Trusted-setup ceremony.** Proving/verifying keys come from a hardcoded seed
+   (`tools/prover/src/main.rs`, `seed_from_u64(0x5151_3ded)`), so the toxic waste
+   is public and anyone can forge proofs. Needs a real Powers-of-Tau + per-circuit
+   Phase-2 MPC.
+   - **Codeable slice:** make `scripts/check-production-readiness.sh` reject the
+     dev-key fingerprint (hash the VK and fail if it matches the seeded dev keys),
+     so seeded keys can never ship.
+2. **Independent circuit soundness review.** An external cryptographer audits the
+   R1CS constraints in `tools/prover/src/circuits/` (a subtle bug here = stolen
+   funds).
+3. **External security audit** of contract + SDK + prover.
+
+## C. CI / process (codeable)
+
+- **Lint enforcement.** Add `cargo clippy --all-targets -- -D warnings`,
+  `cargo fmt --check`, and an eslint/`tsc --noEmit` gate. Blocked on a one-time
+  repo-wide cleanup: the code is not currently clippy-clean and uses non-default
+  rustfmt formatting, so enabling `-D warnings` now would fail CI.
+- **Negative e2e through a contract entrypoint.** Add a sandbox test that submits
+  a forged / wrong-circuit / random proof to `deposit`/`withdraw`/`transfer` and
+  asserts on-chain rejection. Today only the `verify_groth16` unit level and the
+  happy-path e2e run; there's no end-to-end *rejection* test via the entrypoints.
+- **Un-ignore `contract/tests/prover_cli_roundtrip.rs`** so the real prover CLI
+  round-trip runs in CI.
+- **Verify the pinned binaryen URL** (`version_119`) in the CI `production-gate`
+  job actually resolves on the first GitHub Actions run (only testable there).
+
+## Intentionally NOT doing (don't re-file)
+
+- **Verifying-key rotation.** A mutable VK would let a compromised owner install a
+  verifier that accepts forged proofs — a fund-theft vector. Fixing a circuit bug
+  is a redeploy instead. The owner-gated emergency **pause** covers incident
+  response without that risk.
+- **Caching the parsed VK in `select_verifier`.** It is parsed once per
+  transaction (not in a loop); the only "cache" would be persisting a parsed
+  `VerifyingKey` in contract state, which is awkward and saves nothing measurable.
+
+## Done (pre-production review)
+
+Critical/high: gated the unbacked-mint `deposit()` out of production (deposits go
+through `ft_on_transfer`); `claim()` re-credits on a failed retry; SDK decrypt no
+longer crashes batch scans on a poisoned ciphertext; CI enforces the lockfile,
+typechecks TS, and runs the production gate (real proofs + deployability).
+
+Medium/hardening: Noir transfer amount range checks (wraparound-mint) + arkworks
+is the authoritative circuit; client-side value-conservation assertion; HKDF KDF
+domain separation; collision-resistant auditor-pubkey→field mapping + scanner
+binding check; in-circuit `n0 != n1`; relayer input validation; wallet spent-note
+tracking; key-committing AEAD; owner-gated emergency pause; storage-deposit refund.
+
+Also: bulk-memory → MVP wasm lowering so freshly built contracts deploy on NEAR
+(`wasm-opt --llvm-memory-copy-fill-lowering`), with a gate check that rejects
+non-deployable artifacts.
