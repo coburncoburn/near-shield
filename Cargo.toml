@@ -18,7 +18,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 near-sdk = "5.5"
-near-workspaces = "0.15"
+near-workspaces = "0.22"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

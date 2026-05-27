@@ -39,7 +39,8 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
              Build it with: \
                cargo build -p shielded-pool --target wasm32-unknown-unknown \
                  --release --no-default-features --features integration-testing \
-               && wasm-opt -Oz --enable-bulk-memory --strip-debug --strip-producers \
+               && wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz \
+                 --strip-debug --strip-producers \
                  target/wasm32-unknown-unknown/release/shielded_pool.wasm \
                  -o target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm"
         )
@@ -73,6 +74,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "vk_transfer": vec![1u8, 2, 3],
             "vk_withdraw": vec![1u8, 2, 3],
         }))
+        .max_gas()
         .transact()
         .await?;
     assert!(init.is_success(), "init failed: {init:#?}");
@@ -90,6 +92,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "note_ct": "note_ct_payload",
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -131,6 +134,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(500_000),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -141,7 +145,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
     let logs = withdraw.logs();
     let saw_withdraw_event = logs
         .iter()
-        .any(|l| l.contains("\"event\":\"withdraw\"") && l.contains("bob"));
+        .any(|l| l.contains("\"event\":\"withdraw\"") && l.contains(bob.id().as_str()));
     assert!(saw_withdraw_event, "no withdraw event in logs: {logs:#?}");
 
     // Nullifier must be marked spent now.
@@ -166,6 +170,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(500_000),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -190,6 +195,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(0),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;

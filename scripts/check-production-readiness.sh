@@ -72,7 +72,7 @@ if [[ ! -f "$OPT_WASM" ]]; then
 
 Build one before deployment, for example:
   cargo build -p shielded-pool --target wasm32-unknown-unknown --release --no-default-features --features groth16-verifier
-  wasm-opt -Oz --enable-bulk-memory --strip-debug --strip-producers \\
+  wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz --strip-debug --strip-producers \\
     target/wasm32-unknown-unknown/release/shielded_pool.wasm \\
     -o $OPT_WASM"
 else
@@ -85,6 +85,20 @@ else
     add_failure "optimised WASM is ${wasm_bytes} bytes, above NEAR's ${MAX_WASM_BYTES}-byte per-transaction deploy limit"
   else
     pass_step "optimised WASM fits NEAR deploy limit"
+  fi
+
+  # The NEAR runtime rejects bulk-memory ops (memory.copy/fill) at deploy time
+  # with PrepareError(Deserialization). Rust >=1.87's wasm32 std emits them, so
+  # the build must run `wasm-opt --llvm-memory-copy-fill-lowering`. Validate the
+  # artifact against the NEAR-accepted feature set (MVP + sign-ext + mutable
+  # globals) so a non-deployable artifact can never pass this gate.
+  if ! command -v wasm-opt >/dev/null 2>&1; then
+    add_failure "wasm-opt is required to validate the deployable artifact's wasm feature set"
+  elif ! wasm-opt --mvp-features --enable-sign-ext --enable-mutable-globals \
+      "$OPT_WASM" -o /dev/null >/dev/null 2>&1; then
+    add_failure "optimised WASM uses wasm features the NEAR runtime rejects (likely bulk-memory). Rebuild with: wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz --strip-debug --strip-producers $RAW_WASM -o $OPT_WASM"
+  else
+    pass_step "optimised WASM uses only NEAR-deployable wasm features"
   fi
 fi
 

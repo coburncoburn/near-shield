@@ -19,12 +19,14 @@ jobs:
           workspaces: contract
       - name: Run unit tests
         run: cargo test -p shielded-pool --lib
-      - name: Build integration-test WASM
+      - name: Build integration-test WASM (compilation check)
+        # The near-workspaces sandbox portion of integration.rs / e2e_real_proofs.rs
+        # is skipped here via SKIP_NEAR_INTEGRATION, so this only verifies the
+        # integration-testing feature compiles to wasm. Local sandbox runs build
+        # the deployable artifact via wasm-opt (see the test's error guidance).
         run: |
           cargo build -p shielded-pool --target wasm32-unknown-unknown \
             --release --no-default-features --features integration-testing
-          cp target/wasm32-unknown-unknown/release/shielded_pool.wasm \
-            target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm
       - name: Run integration and verifier tests
         run: SKIP_NEAR_INTEGRATION=1 cargo test -p shielded-pool --tests
 

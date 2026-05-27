@@ -16,7 +16,9 @@ The prover (`tools/prover`) proves real `deposit`, `transfer`, and `withdraw` Gr
 
 > **Sandbox only — never use with real funds.** This prototype has not undergone circuit soundness review, a trusted-setup ceremony, or an external security audit. See `docs/superpowers/specs/2026-05-26-real-groth16-prover-e2e.md` for the path-to-production gates that remain before any mainnet deployment.
 
-Note: the E2E near-workspaces integration test (`contract/tests/integration.rs`) exercises the full on-chain flow with real proofs but requires NEAR protocol sandbox ≥ v84; the bundled sandbox is older, so that test is environment-gated. Proof generation and contract-level verifier tests pass regardless.
+Note: the near-workspaces sandbox tests (`contract/tests/integration.rs` and the real-proof `contract/tests/e2e_real_proofs.rs`) deploy the contract to a local NEAR sandbox (neard 2.11.0, bundled by near-workspaces 0.22) and drive the full on-chain deposit/withdraw/transfer flow — `e2e_real_proofs` does so with real Groth16 proofs verified via `alt_bn128`. They pass locally and can be skipped with `SKIP_NEAR_INTEGRATION=1` (as CI does); proof generation and contract-level verifier tests pass regardless.
+
+Deploy note: since Rust 1.87 the `wasm32-unknown-unknown` target emits bulk-memory ops (`memory.copy`/`memory.fill`) from precompiled std, which the NEAR runtime rejects at deploy with `PrepareError(Deserialization)`. The deployable artifact must be produced with `wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering` to lower them to MVP; the production gate now validates this.
 
 What **is** in place:
 
@@ -41,12 +43,12 @@ What **is** in place:
 ## Test status
 
 - `cargo test -p shielded-pool --lib` -- 66 passing tests + 2 ignored vector dumps
-- `cargo test -p shielded-pool --tests` -- 12 passing property/verifier tests + 1 environment-gated near-workspaces smoke + 1 ignored prover round-trip
+- `cargo test -p shielded-pool --tests` -- 14 passing property/verifier + near-workspaces sandbox tests (incl. real-proof deposit/withdraw/transfer) + 1 ignored prover round-trip; sandbox tests skippable via `SKIP_NEAR_INTEGRATION=1`
 - `nargo test --workspace` (in `circuits/`) -- 22 tests
 - `pnpm -r test` -- core 39, sdk 22, auditor 7, relayer 6 = 74 tests
 - `npm test` (in `tools/superpowers-validate/`) -- 16 tests
 
-Total: **190 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips and 1 environment-gated near-workspaces smoke.** CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
+Total: **192 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips.** The two near-workspaces sandbox tests now deploy to and pass against the bundled neard sandbox; CI skips the sandbox portion via `SKIP_NEAR_INTEGRATION=1`. CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
 
 ## Production Gate
 
@@ -56,6 +58,7 @@ The production-readiness script verifies:
 - the production verifier feature compiles for `wasm32-unknown-unknown`
 - default WASM builds with mock verifier semantics are rejected
 - the optimised WASM artifact exists and fits under NEAR's deploy transaction limit
+- the optimised WASM uses only NEAR-deployable wasm features (no bulk-memory; lowered to MVP)
 
 **Remaining path-to-mainnet gates** (see spec for details):
 

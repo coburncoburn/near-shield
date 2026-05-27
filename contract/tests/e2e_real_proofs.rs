@@ -169,6 +169,11 @@ fn skip() -> bool {
 /// Loads the deployable (wasm-opt'd) groth16-verifier WASM. If the optimised
 /// artifact is missing but the raw cargo output exists, runs `wasm-opt` to
 /// produce it (same flags as `scripts/check-production-readiness.sh`).
+///
+/// `--llvm-memory-copy-fill-lowering` is required: since Rust 1.87 the
+/// wasm32-unknown-unknown target emits `memory.copy`/`memory.fill` (bulk-memory)
+/// from precompiled std, which the NEAR runtime rejects at deploy time with
+/// `PrepareError(Deserialization)`. The pass lowers them back to MVP.
 fn load_deployable_wasm() -> anyhow::Result<Vec<u8>> {
     if !std::path::Path::new(OPT_WASM_PATH).exists() {
         anyhow::ensure!(
@@ -179,8 +184,9 @@ fn load_deployable_wasm() -> anyhow::Result<Vec<u8>> {
         );
         let status = Command::new("wasm-opt")
             .args([
-                "-Oz",
                 "--enable-bulk-memory",
+                "--llvm-memory-copy-fill-lowering",
+                "-Oz",
                 "--strip-debug",
                 "--strip-producers",
                 RAW_WASM_PATH,
@@ -191,8 +197,8 @@ fn load_deployable_wasm() -> anyhow::Result<Vec<u8>> {
             .map_err(|e| {
                 anyhow::anyhow!(
                     "wasm-opt not found ({e}); produce the deployable artifact with: \
-                     wasm-opt -Oz --enable-bulk-memory --strip-debug --strip-producers \
-                     {RAW_WASM_PATH} -o {OPT_WASM_PATH}"
+                     wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz \
+                     --strip-debug --strip-producers {RAW_WASM_PATH} -o {OPT_WASM_PATH}"
                 )
             })?;
         anyhow::ensure!(status.success(), "wasm-opt failed");
@@ -292,6 +298,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
             "vk_transfer": vk_transfer,
             "vk_withdraw": vk_withdraw,
         }))
+        .max_gas()
         .transact()
         .await?;
     assert!(init.is_success(), "init failed: {init:#?}");
@@ -408,6 +415,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
             "vk_transfer": std::fs::read(format!("{KEY_DIR}/transfer.vk"))?,
             "vk_withdraw": std::fs::read(format!("{KEY_DIR}/withdraw.vk"))?,
         }))
+        .max_gas()
         .transact()
         .await?
         .into_result()?;
