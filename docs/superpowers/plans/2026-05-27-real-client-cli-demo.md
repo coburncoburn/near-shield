@@ -224,9 +224,9 @@ import type { Account } from "near-api-js";
 export interface NearCaller {
   /** AccountId of the signer. */
   accountId(): string;
-  /** Change-method call. Returns the tx outcome's logs (flattened). */
+  /** Change-method call. Returns flattened receipt logs + the tx hash so callers can assert it landed. */
   call(contractId: string, method: string, args: Record<string, unknown>,
-       opts?: { gas?: bigint; attachedDeposit?: bigint }): Promise<{ logs: string[] }>;
+       opts?: { gas?: bigint; attachedDeposit?: bigint }): Promise<{ logs: string[]; transactionHash: string }>;
   /** View-method call, JSON-decoded. */
   view<T>(contractId: string, method: string, args?: Record<string, unknown>): Promise<T>;
 }
@@ -609,7 +609,8 @@ export class WorkspacesCaller implements NearCaller {
     });
     // near-workspaces TransactionResult exposes a flattened `.logs` getter that
     // concatenates receipt logs. Use it directly; do NOT use `res.result.logs`.
-    return { logs: res.logs };
+    // `.result.transaction_outcome.id` is the canonical tx hash on the v4 result.
+    return { logs: res.logs, transactionHash: res.result.transaction_outcome.id };
   }
   async view<T>(contractId: string, method: string, args: Record<string, unknown> = {}) {
     return await this.account.view<T>(contractId, method, args);
