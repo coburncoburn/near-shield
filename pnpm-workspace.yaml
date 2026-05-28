@@ -1,6 +1,7 @@
 packages:
   - "sdk/packages/*"
 allowBuilds:
-  esbuild: set this to true or false
+  secp256k1: true
 onlyBuiltDependencies:
   - esbuild
+  - secp256k1
