@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Field, generateKeyPair, hashBytesToField } from "@shielded-near/core";
+import { Field, generateKeyPair, keccakToField } from "@shielded-near/core";
 import { Wallet } from "./wallet.js";
 import { encodeCiphertext } from "./envelopes.js";
 import type { Prover, ProveRequest } from "./prover.js";
@@ -26,7 +26,7 @@ describe("view_ct_hash binding", () => {
     const prover = new CapturingProver();
     const w = new Wallet({ seed, usdcTokenAccountId: "usdc.test", poolAccountId: "pool.test" });
     const tx = await w.buildDepositProved({ amount: 100n, auditorPubkey }, prover as unknown as Prover);
-    const expected = hashBytesToField(
+    const expected = keccakToField(
       new TextEncoder().encode(encodeCiphertext(tx.viewCiphertexts[0]))
     ).toHex();
     expect(prover.last!.publicInputs[DEPOSIT_PI_INDEX_VIEW_CT_HASH]).toBe(expected);
@@ -66,8 +66,8 @@ describe("view_ct_hash binding", () => {
       }
     );
 
-    const expectedSender = hashBytesToField(utf8(encodeCiphertext(tx.viewCiphertexts[0]))).toHex();
-    const expectedRecipient = hashBytesToField(utf8(encodeCiphertext(tx.viewCiphertexts[1]))).toHex();
+    const expectedSender = keccakToField(utf8(encodeCiphertext(tx.viewCiphertexts[0]))).toHex();
+    const expectedRecipient = keccakToField(utf8(encodeCiphertext(tx.viewCiphertexts[1]))).toHex();
 
     expect(prover.last!.publicInputs[TRANSFER_PI_INDEX_VIEW_CT_HASH_SENDER]).toBe(expectedSender);
     expect(prover.last!.publicInputs[TRANSFER_PI_INDEX_VIEW_CT_HASH_RECIPIENT]).toBe(expectedRecipient);
@@ -97,7 +97,7 @@ describe("view_ct_hash binding", () => {
       prover as unknown as Prover
     );
 
-    const expected = hashBytesToField(utf8(encodeCiphertext(tx.viewCiphertexts[0]))).toHex();
+    const expected = keccakToField(utf8(encodeCiphertext(tx.viewCiphertexts[0]))).toHex();
     expect(prover.last!.publicInputs[WITHDRAW_PI_INDEX_VIEW_CT_HASH]).toBe(expected);
   });
 });

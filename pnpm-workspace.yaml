@@ -1,5 +1,6 @@
 packages:
   - "sdk/packages/*"
+  - "sdk/test-vectors/scripts"
   - "demo"
 allowBuilds:
   esbuild: true

@@ -8,6 +8,7 @@ import {
   encodeNotePayload,
   generateKeyPair,
   hashBytesToField,
+  keccakToField,
   poseidon2,
   scanNotes,
   sealTo,
@@ -598,7 +599,7 @@ export class Wallet {
  * computes from `args.view_ct.as_bytes()`.
  */
 function viewCtHash(sealed: Uint8Array): string {
-  return hashBytesToField(new TextEncoder().encode(encodeCiphertext(sealed))).toHex();
+  return keccakToField(new TextEncoder().encode(encodeCiphertext(sealed))).toHex();
 }
 
 function randomField(): Field {
