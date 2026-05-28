@@ -86,8 +86,8 @@ export function encodeCiphertext(b: Uint8Array): string {
 import { describe, it, expect } from "vitest";
 import { Wallet } from "./wallet.js";
 import { encodeCiphertext } from "./envelopes.js";
-import { hashBytesToField, type Prover, type ProveRequest } from "@shielded-near/core";
-// NOTE: Prover type is exported from ./prover.js; import accordingly.
+import { hashBytesToField } from "@shielded-near/core";
+import type { Prover, ProveRequest } from "./prover.js"; // Prover/ProveRequest live in the sdk package, not core
 
 class CapturingProver {
   public last?: ProveRequest;
@@ -438,8 +438,8 @@ import { parseShieldedEvents } from "./events.js";
 import type { NearCaller } from "./near-caller.js";
 import { Field, type NoteCiphertext } from "@shielded-near/core";
 import {
-  toFtTransferCallArgs, toTransferCall, toWithdrawCall, type BuiltTx,
-} from "@shielded-near/sdk";
+  toFtTransferCallArgs, toTransferCall, type BuiltTx,
+} from "@shielded-near/sdk"; // all re-exported by sdk/src/index.ts (verified). withdraw goes via the relayer submitter, so toWithdrawCall is NOT needed here.
 
 const ONE_YOCTO = 1n;
 
@@ -501,7 +501,7 @@ function hexToBytes(h: string): Uint8Array {
   return out;
 }
 ```
-  Note: `withdraw` is submitted through the relayer (Task 5), not `PoolClient.transfer`; `toWithdrawCall` is imported there. Confirm `@shielded-near/sdk` re-exports `toFtTransferCallArgs`, `toTransferCall`, `toWithdrawCall`, and `BuiltTx` from its `index.ts`; if not, add them (small, additive).
+  Note: `withdraw` is submitted through the relayer (Task 5), not `PoolClient`. `@shielded-near/sdk/index.ts` already re-exports `toFtTransferCallArgs`, `toTransferCall`, `toWithdrawCall`, and `type BuiltTx` (verified), so no change to the sdk package is needed.
 
 - [ ] **Step 6: Run full client suite, verify PASS.** `pnpm --filter @shielded-near/client test`
 
@@ -607,6 +607,8 @@ export class WorkspacesCaller implements NearCaller {
       gas: (opts?.gas ?? 100_000_000_000_000n).toString(),
       attachedDeposit: (opts?.attachedDeposit ?? 0n).toString(),
     });
+    // near-workspaces TransactionResult exposes a flattened `.logs` getter that
+    // concatenates receipt logs. Use it directly; do NOT use `res.result.logs`.
     return { logs: res.logs };
   }
   async view<T>(contractId: string, method: string, args: Record<string, unknown> = {}) {
@@ -614,7 +616,7 @@ export class WorkspacesCaller implements NearCaller {
   }
 }
 ```
-  (Verify the near-workspaces `Account.callRaw` result exposes `.logs`; if logs live under `result.receipts_outcome[*].outcome.logs`, flatten there.)
+  **Verify before relying on it:** near-workspaces `TransactionResult.logs` is a getter returning all receipt logs flattened. If on the installed version logs are only under `res.result.receipts_outcome[*].outcome.logs`, flatten those instead. The demo silently ingests zero events (and `assertRootMatchesChain` will throw on the first deposit) if this returns nothing — so confirm logs are non-empty after the first deposit during Step 6 of Task 6.
 
 - [ ] **Step 4: Write `demo/src/prereqs.ts`** — `assertPrereqs()` that checks the four artifacts exist (`target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm`, `.../mock_ft.wasm`, `target/release/shielded-prover`, `target/sp-keys/{deposit,transfer,withdraw}.vk`) and throws a single message listing the exact build commands (from the "Key facts" block) for any that are missing.
 
@@ -623,13 +625,17 @@ export class WorkspacesCaller implements NearCaller {
   2. `Worker.init()`; `root = worker.rootAccount`.
   3. Deploy token: `const token = await root.devDeploy(MOCK_FT_WASM)`, call `new` minting supply to a freshly created `alice` (or to a `minter` then transfer). Register storage (`storage_deposit`) for the pool, alice, bob, relayer.
   4. Deploy pool: `const pool = await root.devDeploy(POOL_OPT_WASM)`; call `pool.new({ owner: pool.accountId, usdc_token: token.accountId, vk_deposit, vk_transfer, vk_withdraw })` reading vks from `target/sp-keys`.
-  5. Build wallets: `new Wallet({ seed, usdcTokenAccountId: token.accountId, poolAccountId: pool.accountId, prover: new SubprocessProver(PROVER_BIN, repoRoot) })` for Alice and Bob (distinct seeds). Bob shares his `address()` (ownerPubkey + viewingPubkey) and an auditor pubkey out-of-band.
-  6. **Deposit:** `const tx = await alice.buildDepositProved({ amount, auditorPubkey }, alice.prover)`; `const cts = await alicePool.deposit(tx)`; `alice.scan(cts)`; `await alicePool.assertRootMatchesChain()`; print Alice balance (100).
-  7. **Transfer:** `root = await alicePool.merkleRoot()`; build `TransferMerkleInputs` from `alicePool.pathFor(...)` for the two input leaves; `const tx = await alice.buildTransferProved(req, alice.prover, merkleInputs)`; `await alicePool.transfer(tx)`; rescan both wallets from the emitted cts; print balances (Alice 40, Bob 60). (Bob needs his own `PoolClient`/tree view, or share the tree — for the demo, share one tree by having Bob scan the same emitted cts and using Alice's `PoolClient` for path lookups, since the tree is global.)
-  8. **Withdraw:** Bob `buildWithdrawProved({ amount: 60n - changeNote?, recipientNearAccount: bob.accountId, relayer: relayer.accountId, relayerFee, merklePath, merkleRoot }, bob.prover)`; construct `RelayerService(config, new NearCallerSubmitter(relayerCaller, pool.accountId))`; map the BuiltTx → `SubmitRequest` (proof, merkleRoot, nullifier, recipient, amount, auditorPubkey, viewCt=encoded, relayer, relayerFee); `await relayer.submit(req)`.
-  9. Assert `token.view("ft_balance_of", { account_id: bob.accountId })` increased by `60 - relayerFee` and the relayer's by the fee.
+  5. Build wallets: `new Wallet({ seed, usdcTokenAccountId: token.accountId, poolAccountId: pool.accountId, prover: new SubprocessProver(PROVER_BIN, repoRoot) })` for Alice and Bob (distinct seeds). Bob shares his `address()` (ownerPubkey + viewingPubkey) and an auditor pubkey out-of-band. **One shared `PoolClient`** is used for chain I/O and tree state (the Merkle tree is global to the pool); both wallets `scan()` the ciphertexts it returns.
+  6. **Deposit TWO notes** (REQUIRED — a transfer consumes two input notes; `Wallet.findTransferInputs` needs two unspent notes with the *same* auditor, see `wallet.ts`). Alice deposits 60 then 40, both with the same `auditorPubkey`:
+     - for each `amt` of `[60n, 40n]`: `const tx = await alice.buildDepositProved({ amount: amt, auditorPubkey }, alice.prover); const cts = await pool.deposit(tx); alice.scan(cts);`
+     - `await pool.assertRootMatchesChain()`; the two deposits land at leaf indices 0 and 1; print Alice balance = 100.
+  7. **Transfer 60 to Bob:** `const merkleRoot = await pool.merkleRoot();` build `TransferMerkleInputs { merkleRoot, merklePath0: pool.pathFor(0n), merklePath1: pool.pathFor(1n) }`; `const tx = await alice.buildTransferProved({ amount: 60n, recipientOwnerPubkey, recipientAuditorPubkey, recipientViewingPubkey }, alice.prover, merkleInputs);` `const cts = await pool.transfer(tx);` then `bob.scan(cts)` (Bob picks up the 60 note) and `alice.scan(cts)` (Alice picks up the 40 change note). Mark Alice's two spent inputs: `alice.markSpent(0n); alice.markSpent(1n);`. Print balances: Alice 40, Bob 60.
+  8. **Bob withdraws his 60 note:** the transfer's two outputs are at leaf indices 2 (recipient→Bob) and 3 (change→Alice); Bob's note is the one his scan discovered (`leafIndex` from the `DiscoveredNote`). `const merkleRoot = await pool.merkleRoot(); const tx = await bob.buildWithdrawProved({ amount: 60n, recipientNearAccount: bobNear.accountId, relayer: relayerNear.accountId, relayerFee, merkleRoot, merklePath: pool.pathFor(bobNoteLeafIndex) }, bob.prover);` (note `buildWithdraw` is whole-note: `amount` must equal Bob's note amount exactly — 60). Build `RelayerService({ nearAccountId: relayerNear.accountId, feeUsdcBase: relayerFee }, new NearCallerSubmitter(relayerCaller, pool.accountId))`; map `tx` → `SubmitRequest` (`proof, merkleRoot, nullifier, recipient=bobNear.accountId, amount:"60", auditorPubkey, viewCt=encodeCiphertext(tx.viewCiphertexts[0]), relayer=relayerNear.accountId, relayerFee:String(relayerFee)`); `await relayerService.submit(req)`. The pool's payout `ft_transfer` credits `bobNear` with `60 - relayerFee` and `relayerNear` with the fee.
+  9. Assert `await token.view("ft_balance_of", { account_id: bobNear.accountId })` increased by `60 - relayerFee` and `relayerNear`'s by `relayerFee`. (Both accounts must be `storage_deposit`-registered on the token — Step 3 — or the payout falls into the pool's recovery book instead of crediting them.)
   10. `await worker.tearDown()` in a `finally`.
   Print a clear narration line before each step (commitments, nullifiers, roots, proof byte length, balances).
+
+  **Account-id note:** `bobNear`/`relayerNear` are the on-chain NEAR accounts used as the withdraw `recipient`/`relayer` public inputs (hashed via `fieldFromAccountId` = `hashBytesToField(utf8(accountId))`, which matches the contract's `hash_bytes_to_field(recipient.as_bytes())`). They are distinct from Bob's shielded `address()` keys. Ensure both are storage-registered and that the depositor account holds enough minted token for the two deposits.
 
 - [ ] **Step 6: Build everything, then run the demo.**
 ```bash

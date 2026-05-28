@@ -187,9 +187,10 @@ NEP-141 (`contracts/mock-ft`), initialises the pool with the verifying keys, reg
 storage for Alice/Bob/the relayer on the token, mints the initial supply to Alice, and
 creates the accounts. Narrated, step by step:
 
-1. **Alice deposits 100 USDC.** `buildDepositProved` (real deposit proof) → `PoolClient.deposit`
-   issues a genuine `ft_transfer_call` on the token → pool's `ft_on_transfer` runs → scan
-   events → Alice shielded balance 100.
+1. **Alice deposits 60 then 40 USDC (two notes).** Each `buildDepositProved` (real deposit
+   proof) → `PoolClient.deposit` issues a genuine `ft_transfer_call` on the token → pool's
+   `ft_on_transfer` runs → scan events → Alice shielded balance 100. Two notes are required
+   because a transfer consumes two input notes (`Wallet.findTransferInputs`).
 2. **Alice transfers 60 to Bob.** `PoolClient` reconstructs the tree and supplies root +
    paths; `buildTransferProved` (real transfer proof) → `PoolClient.transfer`. Both wallets
    rescan: Alice 40 (change note), Bob 60.
