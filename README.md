@@ -35,7 +35,7 @@ What **is** in place:
 
 `@shielded-near/demo` drives a full real-client flow against a local near-workspaces sandbox: it deploys the real `groth16-verifier` pool WASM + a vendored NEP-141 (`mock-ft`), creates Alice/Bob/relayer accounts, generates real Groth16 proofs via the `shielded-prover` binary, and submits them through the TS SDK.
 
-> **Current state:** the **deposit** step (`ft_transfer_call` → `ft_on_transfer` → real Groth16 verify → leaf inserted → `local root matches chain: true`) works end-to-end and is the proof the SDK's `view_ct_hash` binding (commit `8de553b`) matches the contract. The **transfer** step is blocked by a contract-level gas issue surfaced by this demo: `hash_bytes_to_field` over a realistic-size view ciphertext consumes ~340–420 Tgas (NEAR's per-tx cap is 300 Tgas). The Rust integration test (`contract/tests/e2e_real_proofs.rs`) avoids this by using 10-character synthetic ciphertexts. See `docs/superpowers/plans/2026-05-27-real-client-cli-demo.md` for the follow-up options.
+> **Current state:** the demo runs the full deposit → transfer → withdraw flow end-to-end with real Groth16 proofs against a near-workspaces sandbox, and asserts Bob's on-chain `ft_balance_of` increased by `60 - relayerFee`. The view_ct binding uses NEAR's `keccak256` host fn — see `docs/superpowers/specs/2026-05-28-view-ct-binding-keccak.md`.
 
 ### Build prereqs (one-time)
 

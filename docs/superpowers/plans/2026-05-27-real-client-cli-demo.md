@@ -684,11 +684,7 @@ git commit -m "docs: document the real-client sandbox demo"
 
 ## Follow-ups (discovered during implementation, out of scope for this plan)
 
-1. **Contract `hash_bytes_to_field` gas blowup with real-size view ciphertexts.** The pool's `transfer` (and likely `withdraw` with realistic payloads) exceeds NEAR's 300 Tgas per-tx cap because `hash_bytes_to_field` is invoked on the hex-encoded ciphertext string and Poseidons it in 31-byte chunks in pure WASM. A typical sealed `ViewDisclosure` is ~351 bytes → 704-char hex → 23 chunks → 22 `poseidon2` folds per view_ct; transfer hashes both sender + recipient view_cts plus 40 tree-insert hashes ≈ 84 `poseidon2` calls ≈ 340–420 Tgas (over the 300 Tgas cap). The Rust e2e (`contract/tests/e2e_real_proofs.rs`) never hit this because it used 10-char synthetic strings. **Options:**
-   - Hash the raw sealed bytes instead of the hex string (~half the chunk count).
-   - Replace the bound `view_ct_hash` with a smaller commitment computed off-chain (e.g. hash on TS, contract stores/checks the commitment).
-   - Move the view_ct to event-only (don't bind it into the proof) and trust the SDK encoding.
-   Any of these requires touching the contract's `hash_bytes_to_field` call sites and the SDK's `view_ct_hash` derivation (in lockstep with Task 0's helper). This is its own task and may also need a soundness re-review.
+1. ~~Contract `hash_bytes_to_field` gas blowup with real-size view ciphertexts.~~ **Resolved 2026-05-28 by `docs/superpowers/plans/2026-05-28-view-ct-binding-keccak.md`** — view_ct binding now uses `keccak_to_field` (env::keccak256 host fn) at the four call sites; transfer demo runs end-to-end under cap.
 
 2. **SDK envelope defaults were wrong.** `toTransferCall` / `toWithdrawCall` defaulted to `attachedDeposit: "0"` and 100 Tgas, both insufficient. Fixed in Task 6 to 1 NEAR and 300 Tgas to match `contract/src/storage.rs` (`TRANSFER_BYTES`/`WITHDRAW_BYTES` × `YOCTO_PER_BYTE`) and the Rust e2e. `PoolClient.transfer` also wasn't forwarding the envelope's `attachedDeposit`. Both fixed in Task 6's commit (`d9b734d`).
 
