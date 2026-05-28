@@ -26,6 +26,7 @@
 use near_sdk::json_types::U128;
 use serde_json::json;
 use shielded_pool::deposit::hash_bytes_to_field as contract_hash_bytes;
+use shielded_pool::deposit::keccak_to_field as contract_view_ct_hash;
 use shielded_pool::poseidon::{poseidon2, poseidon4, Field};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -256,7 +257,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
 
     let view_ct = "view_ct_payload";
     let note_ct = "note_ct_payload";
-    let view_ct_hash = contract_hash_bytes(view_ct.as_bytes());
+    let view_ct_hash = contract_view_ct_hash(view_ct.as_bytes());
 
     // DEPOSIT proof: PI = [commitment, amount, auditor, view_ct_hash].
     let deposit_pi = vec![
@@ -283,7 +284,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
     let w_relayer = contract_hash_bytes(w_relayer_id.as_bytes());
     let w_relayer_fee: u128 = 5_000;
     let w_view_ct = "view_ct_withdraw";
-    let w_view_ct_hash = contract_hash_bytes(w_view_ct.as_bytes());
+    let w_view_ct_hash = contract_view_ct_hash(w_view_ct.as_bytes());
     let nullifier = nullifier_of(sk, commitment, Field::zero());
     let (deposit_root, w_path) = empty_path_for_leaf0(commitment);
 
@@ -471,7 +472,7 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
         (c_in1, 40u128, "vct_in1", "nct_in1"),
     ] {
         let amt_f = Field::from_u128(amt);
-        let vh = contract_hash_bytes(vct.as_bytes());
+        let vh = contract_view_ct_hash(vct.as_bytes());
         let pi = vec![fr_hex(c), fr_hex(amt_f), fr_hex(t_auditor), fr_hex(vh)];
         // owner/blinding witness: blinding 1 for c_in0, 2 for c_in1.
         let blind = if amt == 60 { 1u64 } else { 2u64 };
@@ -512,8 +513,8 @@ async fn real_proof_deposit_withdraw_transfer() -> anyhow::Result<()> {
     let n1 = nullifier_of(sk, c_in1, Field::from_u64(1));
     let t_vct_sender = "vct_sender";
     let t_vct_recip = "vct_recip";
-    let vh_sender = contract_hash_bytes(t_vct_sender.as_bytes());
-    let vh_recip = contract_hash_bytes(t_vct_recip.as_bytes());
+    let vh_sender = contract_view_ct_hash(t_vct_sender.as_bytes());
+    let vh_recip = contract_view_ct_hash(t_vct_recip.as_bytes());
 
     let transfer_pi = vec![
         fr_hex(root_off),

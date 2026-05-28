@@ -1,4 +1,4 @@
-use crate::deposit::hash_bytes_to_field;
+use crate::deposit::{hash_bytes_to_field, keccak_to_field};
 use crate::poseidon::Field;
 use crate::storage::{require_storage_deposit, WITHDRAW_BYTES};
 use crate::verifier::{select_verifier, Verifier};
@@ -52,7 +52,7 @@ impl Contract {
             hash_bytes_to_field(relayer.as_bytes()),
             Field::from_u128(relayer_fee.0),
             ap,
-            hash_bytes_to_field(view_ct.as_bytes()),
+            keccak_to_field(view_ct.as_bytes()),
         ];
         assert!(
             select_verifier(&self.vk_withdraw).verify(&proof, &pi),

@@ -1,4 +1,4 @@
-use crate::deposit::hash_bytes_to_field;
+use crate::deposit::keccak_to_field;
 use crate::storage::{require_storage_deposit, TRANSFER_BYTES};
 use crate::verifier::{select_verifier, Verifier};
 use crate::{events, Contract, ContractExt};
@@ -55,8 +55,8 @@ impl Contract {
             c1,
             ap,
             rap,
-            hash_bytes_to_field(view_cts[0].as_bytes()),
-            hash_bytes_to_field(view_cts[1].as_bytes()),
+            keccak_to_field(view_cts[0].as_bytes()),
+            keccak_to_field(view_cts[1].as_bytes()),
         ];
         assert!(
             select_verifier(&self.vk_transfer).verify(&proof, &pi),

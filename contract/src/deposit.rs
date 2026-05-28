@@ -89,7 +89,7 @@ impl Contract {
             commitment_field,
             Field::from_u128(args.amount.0),
             auditor_field,
-            hash_bytes_to_field(args.view_ct.as_bytes()),
+            keccak_to_field(args.view_ct.as_bytes()),
         ];
         assert!(
             select_verifier(&self.vk_deposit).verify(&args.proof, &pi),
