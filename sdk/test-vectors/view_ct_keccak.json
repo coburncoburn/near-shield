@@ -1,0 +1,41 @@
+{
+  "_comment": "keccak_to_field vectors. Source of truth: contract/src/deposit.rs::keccak_to_field (env::keccak256 -> first 31 bytes LE -> Field). TS implementation in sdk/packages/core/src/keccak_to_field.ts MUST match.",
+  "cases": [
+    {
+      "name": "empty",
+      "input_hex": "0x",
+      "expected_digest_hex": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+      "expected_field_hex": "0x00a4855d04d8fa7b3b2782ca53b600e5c003c7dcb27d7e923c23f7860146d2c5"
+    },
+    {
+      "name": "single_byte_ff",
+      "input_hex": "0xff",
+      "expected_digest_hex": "0x8b1a944cf13a9a1c08facb2c9e98623ef3254d2ddb48113885c3e8e97fec8db9",
+      "expected_field_hex": "0x008dec7fe9e8c385381148db2d4d25f33e62989e2ccbfa081c9a3af14c941a8b"
+    },
+    {
+      "name": "short_ascii_viewct",
+      "input_hex": "0x766965776374",
+      "expected_digest_hex": "0x308440b5bded4a5079c661ba6ec97c0b53e000ef2bb18b2913efefaaf7bf092d",
+      "expected_field_hex": "0x0009bff7aaefef13298bb12bef00e0530b7cc96eba61c679504aedbdb5408430"
+    },
+    {
+      "name": "thirty_one_zeros",
+      "input_hex": "0x00000000000000000000000000000000000000000000000000000000000000",
+      "expected_digest_hex": "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b4cf",
+      "expected_field_hex": "0x00b409c77e66d490e1b4b57818f255deb978c8415aecf3952d51991445d0fe15"
+    },
+    {
+      "name": "thirty_two_zeros",
+      "input_hex": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_digest_hex": "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563",
+      "expected_field_hex": "0x00e5f30e16932f36f608404895bca64bc86f3888a94503d6a8628b54d9ec0d29"
+    },
+    {
+      "name": "high_bit_set",
+      "input_hex": "0x686967685f6269745f736565645f32",
+      "expected_digest_hex": "0xc92aa525e7f4170361a2af676b28080e95cda305dc0ef7657d581c4ac48bef0f",
+      "expected_field_hex": "0x00ef8bc44a1c587d65f70edc05a3cd950e08286b67afa2610317f4e725a52ac9"
+    }
+  ]
+}

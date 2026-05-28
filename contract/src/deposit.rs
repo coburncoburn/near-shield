@@ -48,6 +48,15 @@ pub fn hash_bytes_to_field(b: &[u8]) -> Field {
     acc
 }
 
+/// Reduces arbitrary bytes to a Field via `keccak256` then little-endian
+/// truncation to 31 bytes (248 bits). Used for binding submitted ciphertexts
+/// into a proof's public input without paying in-WASM Poseidon over the full
+/// length. Cross-language vectors live in `sdk/test-vectors/view_ct_keccak.json`.
+pub fn keccak_to_field(b: &[u8]) -> Field {
+    let digest = near_sdk::env::keccak256(b);
+    Field::from_bytes_le(&digest[..31])
+}
+
 /// JSON payload the user attaches to a NEP-141 `ft_transfer_call(msg=...)`
 /// when depositing USDC into the shielded pool.
 #[derive(Serialize, Deserialize)]
@@ -240,5 +249,23 @@ mod tests {
         );
         let root = c.merkle_root();
         assert!(c.recent_roots.contains(&crate::deposit::parse_hex32(&root).unwrap()));
+    }
+
+    #[test]
+    fn keccak_to_field_vectors() {
+        let raw = include_str!("../../sdk/test-vectors/view_ct_keccak.json");
+        let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        for case in v["cases"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            let input_hex = case["input_hex"].as_str().unwrap().trim_start_matches("0x");
+            let input = hex::decode(input_hex).unwrap();
+            let expected_digest_hex = case["expected_digest_hex"].as_str().unwrap();
+            let got_digest = near_sdk::env::keccak256(&input);
+            let got_digest_hex = format!("0x{}", hex::encode(&got_digest));
+            assert_eq!(got_digest_hex, expected_digest_hex, "case {name} (digest)");
+            let expected_hex = case["expected_field_hex"].as_str().unwrap();
+            let got = super::keccak_to_field(&input);
+            assert_eq!(got.to_hex(), expected_hex, "case {name}");
+        }
     }
 }
