@@ -21,7 +21,7 @@
 - **`Field.fromBytesLe` does NOT exist on the TS `Field`.** It must be added. A private `fieldFromLeBytes` already exists inside `sdk/packages/core/src/hash_bytes.ts` — Task 2 lifts that to `Field.fromBytesLe` (DRY) and refactors `hash_bytes.ts` to use it.
 - **The demo's transfer path is gated.** `demo/src/run-demo.ts` currently wraps the transfer + withdraw steps behind `if (process.env.DEMO_TRANSFER === "1")` (commit `382b689`). After this fix, the full flow must run by default and the env gate is deleted.
 - **Cross-language vectors live in `sdk/test-vectors/`.** The existing `view_ct_hash.json` is for Poseidon-based `hash_bytes_to_field`; do NOT touch it. A new `view_ct_keccak.json` is added with this plan.
-- **Existing tests likely have hard-coded expected hash values.** Anything currently asserting a *value* (not just "non-zero" or "matches re-computation") needs updating to the new keccak-based value. Likely affected: `wallet.viewcthash.test.ts` (asserts dynamically — should still pass), `wallet.test.ts`, `pool-client.test.ts`. The plan touches each as needed.
+- **`wallet.viewcthash.test.ts` will break after the SDK swap.** It currently imports `hashBytesToField` and computes the expected PI value from `hashBytesToField(utf8(encodeCiphertext(...)))`. After Task 5, the wallet computes `keccakToField(...)` instead — so the test's `expected` values must be updated to call `keccakToField` from the same import. Task 5 makes this edit explicitly. Other tests (`wallet.test.ts`, `pool-client.test.ts`) assert byte lengths and PI counts, not hash values — they're unaffected.
 
 ---
 
@@ -115,55 +115,73 @@ git commit -m "refactor(core): lift Field.fromBytesLe out of hash_bytes"
 
 The shared vectors live in `sdk/test-vectors/`. Both sides will assert against this file. We commit the vectors first (computed independently of any implementation) and then implement to match.
 
-- [ ] **Step 1: Generate the vectors.** Each case has a `name`, `input_b64` (base64-encoded input), `expected_digest_hex` (the 32-byte keccak256 digest, hex), and `expected_field_hex` (the 32-byte BE Field representation after first-31-bytes-LE reduction). Compute these by hand with any reference keccak256 (Python `pycryptodome` or Node `node -e 'import("@noble/hashes/sha3").then(...)'`).
+- [ ] **Step 1: Generate the vectors.** Use **hex** for inputs (the contract crate already depends on `hex` for parsing; this avoids pulling in `base64` for tests). Each case has `name`, `input_hex` (0x-prefixed; empty input is `"0x"`), `expected_digest_hex` (32-byte keccak256 digest, 0x-prefixed), and `expected_field_hex` (the 32-byte big-endian Field representation after first-31-bytes-LE reduction).
 
-Cases to include (vectors are computed BY YOU, not pasted from anywhere — verify them with a second tool to avoid copy-paste rot):
+Use this one-shot Node script to compute each case (save as `/tmp/gen-vectors.mjs`, run with `node /tmp/gen-vectors.mjs`):
 
-1. `empty` — `input_b64 = ""` (empty bytes)
-2. `single_byte_ff` — `input_b64 = "/w=="` ([0xff])
-3. `short_ascii_viewct` — `input_b64 = "dmlld2N0"` (`"viewct"`)
-4. `thirty_one_zeros` — `input_b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="` ([0x00; 31])
-5. `thirty_two_zeros` — `input_b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="` ([0x00; 32])
-6. `high_bit_set` — choose any input such that `keccak256(input)[0] & 0x80 == 0x80`. Try `"high_bit_seed_001"` and increment the suffix until you find one. Record both inputs and verify the high bit is set in the digest.
+```js
+import { keccak_256 } from "@noble/hashes/sha3";
+const hex = (b) => "0x" + Buffer.from(b).toString("hex");
+const cases = [
+  { name: "empty", input: new Uint8Array(0) },
+  { name: "single_byte_ff", input: Uint8Array.of(0xff) },
+  { name: "short_ascii_viewct", input: new TextEncoder().encode("viewct") },
+  { name: "thirty_one_zeros", input: new Uint8Array(31) },
+  { name: "thirty_two_zeros", input: new Uint8Array(32) },
+];
+// Find a seed that makes digest[0] high bit set.
+let i = 0;
+let highBitInput; let highBitDigest;
+while (true) {
+  const buf = new TextEncoder().encode(`high_bit_seed_${i}`);
+  const d = keccak_256(buf);
+  if (d[0] & 0x80) { highBitInput = buf; highBitDigest = d; break; }
+  if (++i > 10000) throw new Error("no high-bit seed found");
+}
+cases.push({ name: "high_bit_set", input: highBitInput });
+for (const c of cases) {
+  const d = keccak_256(c.input);
+  const le31 = d.subarray(0, 31);
+  // Field repr: 31-byte LE -> bigint -> 32-byte BE
+  let v = 0n;
+  for (let j = le31.length - 1; j >= 0; j--) v = (v << 8n) | BigInt(le31[j]);
+  const be32 = new Uint8Array(32);
+  let x = v;
+  for (let j = 31; j >= 0; j--) { be32[j] = Number(x & 0xffn); x >>= 8n; }
+  console.log(JSON.stringify({ name: c.name, input_hex: hex(c.input), expected_digest_hex: hex(d), expected_field_hex: hex(be32) }, null, 2) + ",");
+}
+```
 
-Compute `expected_digest_hex = "0x" + hex(keccak256(input_bytes))` and `expected_field_hex = "0x" + hex(big_endian_32(little_endian_to_int(digest[:31])))`.
-
-Write `sdk/test-vectors/view_ct_keccak.json` with this exact top-level shape (mirror `view_ct_hash.json`):
+Paste the printed entries into `sdk/test-vectors/view_ct_keccak.json`:
 
 ```json
 {
   "_comment": "keccak_to_field vectors. Source of truth: contract/src/deposit.rs::keccak_to_field (env::keccak256 -> first 31 bytes LE -> Field). TS implementation in sdk/packages/core/src/keccak_to_field.ts MUST match.",
   "cases": [
-    { "name": "empty", "input_b64": "", "expected_digest_hex": "0x...", "expected_field_hex": "0x..." },
-    ...
+    { "name": "empty", "input_hex": "0x", "expected_digest_hex": "0x...", "expected_field_hex": "0x..." }
   ]
 }
 ```
 
-A 7th `realistic_view_ct` case will be added in Task 5 once the wallet produces a real `encodeCiphertext(sealedView)` for a transfer (capture-and-paste).
+(Trim the trailing comma after the last entry.) A 7th `realistic_view_ct` case is added in Task 5 via a committed capture script.
 
-- [ ] **Step 2: Write the failing Rust test.** In `contract/src/deposit.rs`, append to the `tests` module:
+- [ ] **Step 2: Write the failing Rust test.** In `contract/src/deposit.rs`, append to the `tests` module (uses `hex` which is already a direct dep — no new Cargo.toml entry):
 
 ```rust
 #[test]
 fn keccak_to_field_vectors() {
-    use crate::poseidon::Field;
     let raw = include_str!("../../sdk/test-vectors/view_ct_keccak.json");
     let v: serde_json::Value = serde_json::from_str(raw).unwrap();
     for case in v["cases"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
-        let input = near_sdk::base64::prelude::Engine::decode(
-            &near_sdk::base64::prelude::BASE64_STANDARD,
-            case["input_b64"].as_str().unwrap(),
-        ).unwrap();
+        let input_hex = case["input_hex"].as_str().unwrap().trim_start_matches("0x");
+        let input = hex::decode(input_hex).unwrap();
         let expected_hex = case["expected_field_hex"].as_str().unwrap();
         let got = super::keccak_to_field(&input);
         assert_eq!(got.to_hex(), expected_hex, "case {name}");
     }
 }
 ```
-
-(If `near_sdk::base64` doesn't re-export the engine in 5.5, use the `base64` crate directly — already a transitive dep — `use base64::Engine; base64::engine::general_purpose::STANDARD.decode(...)`.)
 
 - [ ] **Step 3: Run, verify FAIL.** `cargo test -p shielded-pool --lib keccak_to_field_vectors` → FAIL (function not defined).
 
@@ -212,13 +230,20 @@ const VECTORS = JSON.parse(
     fileURLToPath(new URL("../../../test-vectors/view_ct_keccak.json", import.meta.url)),
     "utf-8"
   )
-) as { cases: { name: string; input_b64: string; expected_field_hex: string }[] };
+) as { cases: { name: string; input_hex: string; expected_field_hex: string }[] };
+
+function hexToBytes(h: string): Uint8Array {
+  const s = h.startsWith("0x") ? h.slice(2) : h;
+  if (s.length === 0) return new Uint8Array(0);
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+  return out;
+}
 
 describe("keccakToField cross-language vectors", () => {
   for (const c of VECTORS.cases) {
     it(c.name, () => {
-      const input = Uint8Array.from(Buffer.from(c.input_b64, "base64"));
-      expect(keccakToField(input).toHex()).toBe(c.expected_field_hex);
+      expect(keccakToField(hexToBytes(c.input_hex)).toHex()).toBe(c.expected_field_hex);
     });
   }
 });
@@ -273,16 +298,28 @@ Expected: 4 hits — `deposit.rs:do_deposit` (`args.view_ct`), `transfer.rs:do_t
 
 - [ ] **Step 2: Apply the swap at each site.** At each location, change the function name `hash_bytes_to_field` → `keccak_to_field`. Keep the argument expression identical. If any file imports `hash_bytes_to_field` only and not `keccak_to_field`, fix the import: in `transfer.rs` and `withdraw.rs` the existing line is `use crate::deposit::hash_bytes_to_field;` — add `keccak_to_field` to the same `use` (e.g., `use crate::deposit::{hash_bytes_to_field, keccak_to_field};`). If the file no longer needs `hash_bytes_to_field`, drop it from the use — but check first: `withdraw.rs` still uses it for `recipient`/`relayer`, so keep both there. `transfer.rs` may no longer need `hash_bytes_to_field` after the swap; drop it if so.
 
-- [ ] **Step 3: Run the existing Rust e2e to confirm soundness regressions don't slip in.**
+- [ ] **Step 3: Triage existing references before running.** Before re-running suites, grep for places that might assert a specific hashed value or reference the old function over `view_ct`:
+```bash
+grep -rn "view_ct_hash\|hashBytesToField\|hash_bytes_to_field" contract/ sdk/packages/ tools/prover/ 2>/dev/null | grep -v node_modules | grep -v "target/"
+```
+Expected hits and treatment:
+- `contract/src/withdraw.rs` `recipient`/`relayer` hashes — UNCHANGED (Poseidon for account ids; these stay on `hash_bytes_to_field`).
+- `contract/tests/e2e_real_proofs.rs` — recomputes view_ct_hash off-chain to feed the witness; **update its helper to call `keccak_to_field`** so the prover's witness matches the contract's recomputation. Look for `contract_hash_bytes(view_ct.as_bytes())` or similar; switch to `shielded_pool::deposit::keccak_to_field(view_ct.as_bytes())`.
+- `contract/src/deposit.rs::tests::dump_view_ct_hash_vectors` — leave it; it's about the Poseidon vectors file, which we're not touching.
+- `sdk/packages/sdk/src/wallet.ts` `viewCtHash` helper — handled in Task 5.
+- `sdk/packages/sdk/src/wallet.viewcthash.test.ts` — handled in Task 5.
+- `sdk/packages/core/src/hash_bytes.ts` and its `.test.ts` — UNCHANGED (Task 1 already DRY-refactored the helper; the Poseidon function itself stays).
+
+- [ ] **Step 4: Re-run suites.**
 ```bash
 cargo test -p shielded-pool --lib
 cargo test -p shielded-pool --tests -- real_proof_deposit_withdraw_transfer
 ```
-The lib suite must stay at 68+ passing. The e2e test re-runs the deposit→withdraw→transfer flow with the **synthetic** 10-char `view_cts` it already uses; it should still pass (the change is the hash function, which both proving and verification recompute consistently). If a test asserts a specific hash value, update it to the new expected (rare — most likely the e2e asserts on root + nullifier + event presence, not on the bound hash value directly).
+The lib suite must stay at 68+ passing. The e2e test re-runs the deposit→withdraw→transfer flow with synthetic 10-char `view_cts`; with the e2e's own helper updated in Step 3, the prover's witness now also uses `keccak_to_field` and the on-chain verifier sees a matching PI. Both sides recompute consistently — the test passes.
 
-- [ ] **Step 4: Commit.**
+- [ ] **Step 5: Commit.**
 ```bash
-git add contract/src/deposit.rs contract/src/transfer.rs contract/src/withdraw.rs
+git add contract/src/deposit.rs contract/src/transfer.rs contract/src/withdraw.rs contract/tests/e2e_real_proofs.rs
 git commit -m "feat(contract): bind view_ct via keccak_to_field at all four sites"
 ```
 
@@ -292,7 +329,8 @@ git commit -m "feat(contract): bind view_ct via keccak_to_field at all four site
 
 **Files:**
 - Modify: `sdk/packages/sdk/src/wallet.ts` (the `viewCtHash` module-level helper from prior plan's Task 0)
-- Modify: `sdk/packages/sdk/src/wallet.viewcthash.test.ts` (the existing binding test from Task 0; its asserted value flips because the helper is computed differently — the test code is unchanged but the actual *value* the wallet now stores will be the keccak one)
+- Modify: `sdk/packages/sdk/src/wallet.viewcthash.test.ts` (the test imports `hashBytesToField` to compute the expected PI — must be swapped to `keccakToField` so the expected matches the new helper)
+- Create: `sdk/test-vectors/scripts/capture-realistic-view-ct.ts` (committed capture script, run on demand)
 
 The wallet's current helper (post-Task 0, in `sdk/packages/sdk/src/wallet.ts`):
 
@@ -312,21 +350,77 @@ function viewCtHash(sealed: Uint8Array): string {
 
 - [ ] **Step 1: Update the import and the helper.** Open `sdk/packages/sdk/src/wallet.ts`. Replace `import { hashBytesToField } from "@shielded-near/core";` (or wherever it appears) with `import { keccakToField } from "@shielded-near/core";`. If `hashBytesToField` is still used elsewhere in the file, keep both imports. Update the `viewCtHash` helper body as above.
 
-- [ ] **Step 2: Run the existing binding tests.** `pnpm --filter @shielded-near/sdk test -- wallet.viewcthash` → all 3 tests pass. They compare `publicInputs[i]` to `keccakToField(...).toHex()` (matching the helper) so they update mechanically; nothing in the test file changes.
+- [ ] **Step 2: Update the binding test's expected value.** Open `sdk/packages/sdk/src/wallet.viewcthash.test.ts`. The test currently imports `hashBytesToField` from `@shielded-near/core` and uses it (three times) to compute the expected PI value. Replace each `hashBytesToField` call with `keccakToField`, and update the import line. Concretely:
+  - Top of file: `import { hashBytesToField } from "@shielded-near/core";` → `import { keccakToField } from "@shielded-near/core";`
+  - The three `hashBytesToField(new TextEncoder().encode(...))` call sites (one per `it()`) all change to `keccakToField(new TextEncoder().encode(...))`.
 
-- [ ] **Step 3: Run the full sdk suite.** `pnpm --filter @shielded-near/sdk test` → all green. The non-binding tests (`wallet.test.ts`, `envelopes.test.ts`) assert proof byte lengths and PI counts, not values, so they're unaffected.
+The test's structural assertions don't change — they still compare `publicInputs[i]` to the helper's output over `encodeCiphertext(tx.viewCiphertexts[i])`. Only the helper used to compute the expected flips.
 
-- [ ] **Step 4: Capture the `realistic_view_ct` vector** (the spec's seventh test case, deferred from Task 2). Add a `--captureRealisticVector` mode to the wallet test OR (simpler) add a one-off Vitest case that:
-  1. Constructs a wallet with a fixed seed and auditor.
-  2. Calls `buildTransferProved` against a `CapturingProver` with two scanned input notes.
-  3. Pulls `tx.viewCiphertexts[0]`, runs `encodeCiphertext(...)`, hashes via `keccakToField`, and `console.log`s `{ input_b64: base64(utf8(encoded)), expected_field_hex: hash.toHex() }`.
-  4. Run once to print the values, then DELETE the case (it was a one-off generator).
+- [ ] **Step 3: Run binding tests.** `pnpm --filter @shielded-near/sdk test -- wallet.viewcthash` → all 3 tests pass. (Before this step they would FAIL — the wallet now emits keccak hashes while the test computed Poseidon. Fix is the import + call swap above.)
 
-Append the printed `realistic_view_ct` entry to `sdk/test-vectors/view_ct_keccak.json`. Re-run `cargo test -p shielded-pool --lib keccak_to_field_vectors` and `pnpm --filter @shielded-near/core test -- keccak_to_field` — both must include the new vector and pass. (If the digest's first byte happens to have the high bit clear, the `realistic_view_ct` case is still useful for the gas-budget reproducibility claim — no need to repeat-roll.)
+- [ ] **Step 4: Run the full sdk suite.** `pnpm --filter @shielded-near/sdk test` → all green. Non-binding tests assert byte lengths and PI counts, not values, so they're unaffected.
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 5: Write the realistic-vector capture script.** Create `sdk/test-vectors/scripts/capture-realistic-view-ct.ts` — a committed, deterministic generator (no Vitest add-and-delete pattern):
+
+```ts
+// Run with: pnpm tsx sdk/test-vectors/scripts/capture-realistic-view-ct.ts
+// Appends/regenerates the `realistic_view_ct` entry for view_ct_keccak.json.
+import { Wallet } from "@shielded-near/sdk";
+import { encodeCiphertext } from "@shielded-near/sdk";
+import { keccakToField } from "@shielded-near/core";
+import { writeFileSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const seedAlice = new Uint8Array(64).fill(1);
+const seedBob = new Uint8Array(64).fill(2);
+const auditorPubkey = new Uint8Array(32).fill(3);
+const alice = new Wallet({ seed: seedAlice, usdcTokenAccountId: "u.t", poolAccountId: "p.t" });
+const bob = new Wallet({ seed: seedBob, usdcTokenAccountId: "u.t", poolAccountId: "p.t" });
+
+// Two scanned deposits at leaves 0,1 (same auditor) so findTransferInputs finds inputs.
+for (const [i, amt] of [[0n, 60n], [1n, 40n]] as [bigint, bigint][]) {
+  const tx = alice.buildDeposit({ amount: amt, auditorPubkey });
+  alice.scan([{ leafIndex: i, sealed: tx.noteCiphertexts[0] }]);
+}
+
+class FakeProver { async prove() { return new Uint8Array(256); } }
+const merkleInputs = {
+  merkleRoot: "0x" + "00".repeat(32),
+  merklePath0: Array.from({ length: 20 }, () => "0x" + "00".repeat(32)),
+  merklePath1: Array.from({ length: 20 }, () => "0x" + "00".repeat(32)),
+};
+const tx = await alice.buildTransferProved(
+  { amount: 60n, recipientOwnerPubkey: bob.ownerPubkey,
+    recipientAuditorPubkey: auditorPubkey, recipientViewingPubkey: bob.viewingKey.publicKey },
+  new FakeProver() as any, merkleInputs);
+
+const encoded = new TextEncoder().encode(encodeCiphertext(tx.viewCiphertexts[0]));
+const hex = (b: Uint8Array) => "0x" + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
+const inputHex = hex(encoded);
+const fieldHex = keccakToField(encoded).toHex();
+const digestHex = "0x" + Array.from(
+  (await import("@noble/hashes/sha3")).keccak_256(encoded)
+).map((x) => x.toString(16).padStart(2, "0")).join("");
+
+const VECTORS_PATH = fileURLToPath(new URL("../view_ct_keccak.json", import.meta.url));
+const v = JSON.parse(readFileSync(VECTORS_PATH, "utf-8"));
+v.cases = v.cases.filter((c: any) => c.name !== "realistic_view_ct");
+v.cases.push({ name: "realistic_view_ct", input_hex: inputHex,
+               expected_digest_hex: digestHex, expected_field_hex: fieldHex });
+writeFileSync(VECTORS_PATH, JSON.stringify(v, null, 2) + "\n");
+console.log("Appended realistic_view_ct vector.");
+```
+
+Run: `pnpm tsx sdk/test-vectors/scripts/capture-realistic-view-ct.ts`. Then re-run both vector tests:
 ```bash
-git add sdk/packages/sdk/src/wallet.ts sdk/test-vectors/view_ct_keccak.json
+cargo test -p shielded-pool --lib keccak_to_field_vectors
+pnpm --filter @shielded-near/core test -- keccak_to_field
+```
+Both must include the new `realistic_view_ct` case and pass.
+
+- [ ] **Step 6: Commit.**
+```bash
+git add sdk/packages/sdk/src/wallet.ts sdk/packages/sdk/src/wallet.viewcthash.test.ts sdk/test-vectors/view_ct_keccak.json sdk/test-vectors/scripts/capture-realistic-view-ct.ts
 git commit -m "fix(sdk): derive view_ct binding via keccak (matches contract)"
 ```
 

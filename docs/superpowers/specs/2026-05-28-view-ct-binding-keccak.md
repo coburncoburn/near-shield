@@ -123,7 +123,8 @@ No new error paths. `near_sdk::env::keccak256` is infallible. `Field::from_bytes
 ## Testing
 
 - **Cross-language vectors** (above).
-- **`PoolClient` event-parsing tests, `MerkleTree` tests, `Wallet` binding tests** — all unchanged. Wallet's `wallet.viewcthash.test.ts` (Task 0) asserts the PI equals the helper's output over the same encoded-string bytes; switching the helper implementation produces a different but still-consistent expected value automatically. The tests stay green; they'd catch a future regression to raw-bytes hashing exactly the same way as before.
+- **`PoolClient` event-parsing tests, `MerkleTree` tests** — all unchanged.
+- **`wallet.viewcthash.test.ts` (Task 0's binding test)** — needs a small edit: it imports `hashBytesToField` to compute the expected PI. Switch that import to `keccakToField` so the expected matches the new helper. The structural assertion (PI equals hash over the encoded-string bytes) is unchanged and still catches a future regression to raw-bytes hashing or to a different hash function.
 - **Real-client demo end-to-end with `DEMO_TRANSFER=1`** — runs through transfer + withdraw. Final balance assertion (`ft_balance_of(Bob) += 60 - relayerFee`, `ft_balance_of(relayer) += relayerFee`) holds. **This is the pass criterion** for the gas fix; it closes out the open follow-up.
 - **Contract gas regression**: `cargo test -p shielded-pool --tests -- real_proof_deposit_withdraw_transfer` (the existing Rust e2e). Its 10-char synthetic ciphertexts continue to pass — keccak digest of a 10-char string is one host call, well under any budget. It catches a soundness regression (a forged proof being accepted) but no longer constrains the production gas envelope; the demo does that.
 
