@@ -27,7 +27,7 @@
   wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering <in> -o target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
   cargo build -p shielded-prover --release
   cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys
-  cargo build -p mock-ft --target wasm32-unknown-unknown --release   # new (Task 1)
+  cargo build -p mock-ft --target wasm32-unknown-unknown --release --no-default-features   # new (Task 1) — strips near-sdk unit-testing helpers
   ```
   (The exact opt-wasm command already lives in `scripts/check-production-readiness.sh` — reuse it.)
 
@@ -641,7 +641,7 @@ export class WorkspacesCaller implements NearCaller {
 ```bash
 # one-time prereqs (see Key facts for the exact opt-wasm flags / reuse scripts/check-production-readiness.sh)
 cargo build -p shielded-pool --target wasm32-unknown-unknown --release --no-default-features --features groth16-verifier
-cargo build -p mock-ft --target wasm32-unknown-unknown --release
+cargo build -p mock-ft --target wasm32-unknown-unknown --release --no-default-features
 cargo build -p shielded-prover --release
 cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys
 pnpm install
