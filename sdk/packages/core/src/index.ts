@@ -22,3 +22,4 @@ export {
   type DiscoveredNote,
   type NoteCiphertext,
 } from "./scanner.js";
+export { keccakToField } from "./keccak_to_field.js";
