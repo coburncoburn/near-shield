@@ -1,0 +1,19 @@
+[package]
+name = "mock-ft"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# `unit-testing` is on by default so `cargo test` / IDE builds work
+# (near-sdk 5.x emits compile_error otherwise). Wasm builds for the sandbox
+# must use `--no-default-features` to strip near-sdk test helpers.
+[features]
+default = ["unit-testing"]
+unit-testing = ["near-sdk/unit-testing"]
+
+[dependencies]
+near-sdk.workspace = true
+near-contract-standards.workspace = true
