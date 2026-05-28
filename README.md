@@ -31,6 +31,36 @@ What **is** in place:
 - Input validation hardening (size bounds, named-field hex parsing, fuzz/property tests)
 - Auditor selective-disclosure design with per-user pubkey, lossless round-trip through note ciphertexts
 
+## Try the demo (sandbox only)
+
+`@shielded-near/demo` drives a full real-client flow against a local near-workspaces sandbox: it deploys the real `groth16-verifier` pool WASM + a vendored NEP-141 (`mock-ft`), creates Alice/Bob/relayer accounts, generates real Groth16 proofs via the `shielded-prover` binary, and submits them through the TS SDK.
+
+> **Current state:** the **deposit** step (`ft_transfer_call` → `ft_on_transfer` → real Groth16 verify → leaf inserted → `local root matches chain: true`) works end-to-end and is the proof the SDK's `view_ct_hash` binding (commit `8de553b`) matches the contract. The **transfer** step is blocked by a contract-level gas issue surfaced by this demo: `hash_bytes_to_field` over a realistic-size view ciphertext consumes ~340–420 Tgas (NEAR's per-tx cap is 300 Tgas). The Rust integration test (`contract/tests/e2e_real_proofs.rs`) avoids this by using 10-character synthetic ciphertexts. See `docs/superpowers/plans/2026-05-27-real-client-cli-demo.md` for the follow-up options.
+
+### Build prereqs (one-time)
+
+```sh
+cargo build -p shielded-pool --target wasm32-unknown-unknown --release --no-default-features --features groth16-verifier
+./scripts/check-production-readiness.sh    # produces target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
+cargo build -p mock-ft --target wasm32-unknown-unknown --release --no-default-features
+wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering \
+  target/wasm32-unknown-unknown/release/mock_ft.wasm \
+  -o target/wasm32-unknown-unknown/release/mock_ft.opt.wasm
+cargo build -p shielded-prover --release
+cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys
+pnpm install
+```
+
+`wasm-opt` is required (used directly here and by `check-production-readiness.sh`); install via your OS package manager or from the [binaryen releases](https://github.com/WebAssembly/binaryen/releases).
+
+`near-workspaces@4.0.0` ships a `neard` that is missing host functions required by `near-sdk 5.5`. The demo uses `near-workspaces` 0.22 (Rust crate), which bundles neard 2.11.0 and does not have this problem. If you see missing-host-function errors from the TS sandbox, set `SANDBOX_ARTIFACT_URL` to a neard 2.7.0 (or later) tarball before running `pnpm install`, or run `pnpm rebuild near-sandbox` with that env var set.
+
+### Run
+
+```sh
+pnpm --filter @shielded-near/demo demo
+```
+
 ## Layout
 
 - `circuits/` -- Noir zk circuits (deposit, transfer, withdraw) and shared primitives
