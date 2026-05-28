@@ -106,7 +106,9 @@ Before the demo can verify a real proof on-chain, the `Wallet` proved-builders
 (`buildDepositProved`, `buildTransferProved`, `buildWithdrawProved`) must compute
 `view_ct_hash` over the **same bytes the contract hashes** — i.e. the bytes of the
 `encodeCt`-produced string (`"0x"+hex(sealed)`), not the raw sealed `Uint8Array`. The fix
-lives in `wallet.ts` (and mirrors into the transfer's two view-ct hashes). A cross-language
+lives in `wallet.ts` and applies to all three proved-builders: the deposit and withdraw
+single `view_ct_hash`, and the transfer's two view-ct hashes (sender + recipient). A
+cross-language
 vector is added so the TS-derived hash provably equals the contract's
 `hash_bytes_to_field` over the identical string — extending the existing
 `sdk/test-vectors/view_ct_hash.json` discipline. This is a correctness fix to the existing
@@ -133,7 +135,8 @@ builds no proofs.
   - `transfer(builtTx)` / `withdraw(builtTx)` → direct function calls on the pool,
     converting the `BuiltTx` to call args via the SDK's `envelopes.ts`
     (`toTransferCall`, `toWithdrawCall`).
-- **Read.** `fetchNoteCiphertexts()` parses `EmitDeposit` / `EmitTransfer` logs (see
+- **Read.** `fetchNoteCiphertexts()` parses the contract's NEP-297 event logs — JSON with
+  `standard: "shielded-pool"` and `event: "deposit"` / `"transfer"` (see
   `contract/src/events.rs`) into `NoteCiphertext[]` (`{ leafIndex, sealed }`, the shape
   `scanNotes` consumes in `sdk/packages/core/src/scanner.ts`). The on-chain `note_ct` /
   `view_ct` fields are strings; the client decodes them back to bytes and pairs each with
@@ -212,7 +215,7 @@ balances at each step.
   `encodeCt` string) equals the contract's `hash_bytes_to_field` over the identical string,
   plus an analogous check that `hashBytesToField` over a NEAR account-id string matches the
   contract's `recipient`/`relayer` derivation (used by `fieldFromAccountId`).
-- `PoolClient`: unit test for `EmitDeposit` / `EmitTransfer` log parsing against captured
+- `PoolClient`: unit test for `event: "deposit"` / `"transfer"` log parsing against captured
   log fixtures (no chain needed), including the two-commitment/two-index transfer case.
 - `run-demo.ts`: the full-flow integration artifact. Gated and skippable like
   `e2e_real_proofs.rs` (needs the built pool WASM + mock-ft WASM + prover binary + keys);
