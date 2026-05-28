@@ -679,5 +679,19 @@ git commit -m "docs: document the real-client sandbox demo"
 ## Verification (use superpowers-extended-cc:verification-before-completion)
 
 - `pnpm -r test` green; `cargo test -p mock-ft` green; `cargo test -p shielded-pool --lib` unchanged-green.
-- `pnpm --filter @shielded-near/demo demo` exits 0 with the final balance assertion passing — this is the proof the `view_ct_hash` fix is correct (real proofs verify on-chain) and that Merkle reconstruction matches the contract (the `assertRootMatchesChain` cross-check never throws).
+- `pnpm --filter @shielded-near/demo demo` runs through the **deposit step** end-to-end with real proofs (Bob's `assertRootMatchesChain` cross-check passes, real Groth16 verification succeeds on-chain — the value of the `view_ct_hash` fix). The transfer step is currently blocked by a contract-level gas issue surfaced by this demo; see "Follow-ups" below.
 - No new dependency leaked into the deployable pool build: `cargo tree -p shielded-pool` must not list `near-contract-standards`.
+
+## Follow-ups (discovered during implementation, out of scope for this plan)
+
+1. **Contract `hash_bytes_to_field` gas blowup with real-size view ciphertexts.** The pool's `transfer` (and likely `withdraw` with realistic payloads) exceeds NEAR's 300 Tgas per-tx cap because `hash_bytes_to_field` is invoked on the hex-encoded ciphertext string and Poseidons it in 31-byte chunks in pure WASM. A typical sealed `ViewDisclosure` is ~351 bytes → 704-char hex → 23 chunks → 22 `poseidon2` folds per view_ct; transfer hashes both sender + recipient view_cts plus 40 tree-insert hashes ≈ 84 `poseidon2` calls ≈ 340–420 Tgas (over the 300 Tgas cap). The Rust e2e (`contract/tests/e2e_real_proofs.rs`) never hit this because it used 10-char synthetic strings. **Options:**
+   - Hash the raw sealed bytes instead of the hex string (~half the chunk count).
+   - Replace the bound `view_ct_hash` with a smaller commitment computed off-chain (e.g. hash on TS, contract stores/checks the commitment).
+   - Move the view_ct to event-only (don't bind it into the proof) and trust the SDK encoding.
+   Any of these requires touching the contract's `hash_bytes_to_field` call sites and the SDK's `view_ct_hash` derivation (in lockstep with Task 0's helper). This is its own task and may also need a soundness re-review.
+
+2. **SDK envelope defaults were wrong.** `toTransferCall` / `toWithdrawCall` defaulted to `attachedDeposit: "0"` and 100 Tgas, both insufficient. Fixed in Task 6 to 1 NEAR and 300 Tgas to match `contract/src/storage.rs` (`TRANSFER_BYTES`/`WITHDRAW_BYTES` × `YOCTO_PER_BYTE`) and the Rust e2e. `PoolClient.transfer` also wasn't forwarding the envelope's `attachedDeposit`. Both fixed in Task 6's commit (`d9b734d`).
+
+3. **`mock-ft` wasm needs bulk-memory lowering**, same as the pool. The demo prereqs require `mock_ft.opt.wasm` produced by `wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering`, not the raw cargo output.
+
+4. **`near-workspaces` ships an older neard.** `near-workspaces@4.0.0`'s bundled `near-sandbox@0.1.5` is neard 2.6.2 (protocol 77), missing the `promise_batch_action_use_global_contract` host fn that `near-sdk 5.5` imports. The demo requires `SANDBOX_ARTIFACT_URL=...near-sandbox 2.7.0...` to be set when installing. Worth documenting in the README and either pinning a newer near-workspaces or providing an install script.
