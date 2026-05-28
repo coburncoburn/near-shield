@@ -82,8 +82,8 @@ export function toDepositArgs(tx: BuiltTx): DepositArgs {
     commitment: pickString(pi, "commitment"),
     amount: pickString(pi, "amount"),
     auditor_pubkey: pickString(pi, "auditorPubkey"),
-    view_ct: encodeCt(tx.viewCiphertexts[0]),
-    note_ct: encodeCt(tx.noteCiphertexts[0]),
+    view_ct: encodeCiphertext(tx.viewCiphertexts[0]),
+    note_ct: encodeCiphertext(tx.noteCiphertexts[0]),
     proof: Array.from(tx.proof),
   };
 }
@@ -125,8 +125,8 @@ export function toTransferArgs(tx: BuiltTx): TransferArgs {
     commitments,
     auditor_pubkey: pickString(pi, "auditorPubkey"),
     recipient_auditor_pubkey: pickString(pi, "recipientAuditorPubkey"),
-    view_cts: [encodeCt(tx.viewCiphertexts[0]), encodeCt(tx.viewCiphertexts[1])],
-    note_cts: [encodeCt(tx.noteCiphertexts[0]), encodeCt(tx.noteCiphertexts[1])],
+    view_cts: [encodeCiphertext(tx.viewCiphertexts[0]), encodeCiphertext(tx.viewCiphertexts[1])],
+    note_cts: [encodeCiphertext(tx.noteCiphertexts[0]), encodeCiphertext(tx.noteCiphertexts[1])],
     proof: Array.from(tx.proof),
   };
 }
@@ -140,7 +140,7 @@ export function toWithdrawArgs(tx: BuiltTx): WithdrawArgs {
     recipient: pickString(pi, "recipient"),
     amount: pickString(pi, "amount"),
     auditor_pubkey: pickString(pi, "auditorPubkey"),
-    view_ct: encodeCt(tx.viewCiphertexts[0]),
+    view_ct: encodeCiphertext(tx.viewCiphertexts[0]),
     relayer: pickString(pi, "relayer"),
     relayer_fee: pickString(pi, "relayerFee"),
     proof: Array.from(tx.proof),
@@ -193,11 +193,9 @@ function pickStringPair(pi: BuiltTx["publicInputs"], key: string): [string, stri
   return [v[0], v[1]];
 }
 
-/**
- * Ciphertexts are sent over JSON. We use hex (chosen for round-trip simplicity
- * and to avoid base64 confusion across platforms). The Rust contract treats
- * them as opaque `String`s and just hashes them into the public input.
- */
-function encodeCt(b: Uint8Array): string {
+/** Ciphertexts cross the JSON boundary as "0x"+hex. The contract treats the
+ *  resulting string as opaque and hashes its bytes into the proof's public
+ *  input, so any code deriving view_ct_hash MUST hash these same bytes. */
+export function encodeCiphertext(b: Uint8Array): string {
   return "0x" + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
 }

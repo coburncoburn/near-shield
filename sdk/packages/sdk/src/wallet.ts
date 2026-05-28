@@ -21,6 +21,7 @@ import {
 } from "@shielded-near/core";
 
 import { StubProver, type Prover } from "./prover.js";
+import { encodeCiphertext } from "./envelopes.js";
 
 export interface WalletConfig {
   /** Seed bytes (e.g. NEAR-wallet-sign-in-derived). Used to derive sk and vk. */
@@ -329,7 +330,7 @@ export class Wallet {
     const viewCt = sealTo(req.auditorPubkey, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
     const noteCt = sealTo(this.viewingKey.publicKey, encodeNotePayload(note, req.auditorPubkey), SEAL_CONTEXT_NOTE);
 
-    const viewCtHashHex = hashBytesToField(viewCt).toHex();
+    const viewCtHashHex = viewCtHash(viewCt);
 
     // Public inputs ordered: commitment, amount, auditorPubkey, view_ct_hash
     const publicInputsArr: string[] = [
@@ -423,8 +424,8 @@ export class Wallet {
     const noteCtRecipient = sealTo(req.recipientViewingPubkey, encodeNotePayload(recipientOut, req.recipientAuditorPubkey), SEAL_CONTEXT_NOTE);
     const noteCtChange = sealTo(this.viewingKey.publicKey, encodeNotePayload(changeOut, senderAuditorPubkey), SEAL_CONTEXT_NOTE);
 
-    const viewCtHashSenderHex = hashBytesToField(viewCtSender).toHex();
-    const viewCtHashRecipientHex = hashBytesToField(viewCtRecipient).toHex();
+    const viewCtHashSenderHex = viewCtHash(viewCtSender);
+    const viewCtHashRecipientHex = viewCtHash(viewCtRecipient);
 
     // Public inputs ordered (9):
     // merkle_root, nullifier0, nullifier1, commitment_out0, commitment_out1,
@@ -523,7 +524,7 @@ export class Wallet {
     }
     const viewCt = sealTo(note.auditorPubkeyBytes, encodeDisclosure(disclosure), SEAL_CONTEXT_VIEW);
 
-    const viewCtHashHex = hashBytesToField(viewCt).toHex();
+    const viewCtHashHex = viewCtHash(viewCt);
 
     // Public inputs ordered (8):
     // merkle_root, nullifier, recipient, amount, relayer, relayer_fee,
@@ -589,6 +590,16 @@ export class Wallet {
 }
 
 // --- Helpers ---
+
+/**
+ * Derives the view_ct_hash public input value from raw sealed bytes. Hashes the
+ * bytes of the encoded ("0x"+hex) string — the exact bytes the contract receives
+ * and hashes on-chain — so the proof's public input matches what the contract
+ * computes from `args.view_ct.as_bytes()`.
+ */
+function viewCtHash(sealed: Uint8Array): string {
+  return hashBytesToField(new TextEncoder().encode(encodeCiphertext(sealed))).toHex();
+}
 
 function randomField(): Field {
   const bytes = new Uint8Array(32);
