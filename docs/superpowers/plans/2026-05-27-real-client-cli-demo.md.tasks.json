@@ -1,0 +1,14 @@
+{
+  "planPath": "docs/superpowers/plans/2026-05-27-real-client-cli-demo.md",
+  "tasks": [
+    {"id": 11, "subject": "Task 0: Fix view_ct_hash derivation in Wallet", "status": "pending"},
+    {"id": 12, "subject": "Task 1: Vendor NEP-141 mock-ft crate", "status": "pending"},
+    {"id": 6, "subject": "Task 2: Scaffold @shielded-near/client + NearCaller", "status": "pending"},
+    {"id": 7, "subject": "Task 3: merkle-tree.ts reconstruction + tests", "status": "pending", "blockedBy": [6]},
+    {"id": 8, "subject": "Task 4: events.ts + PoolClient", "status": "pending", "blockedBy": [6, 7, 11]},
+    {"id": 9, "subject": "Task 5: NearTxSubmitter for relayer", "status": "pending", "blockedBy": [6]},
+    {"id": 10, "subject": "Task 6: run-demo.ts narrated two-wallet flow", "status": "pending", "blockedBy": [8, 9, 11, 12]},
+    {"id": 13, "subject": "Task 7: Wire-up verification + README demo docs", "status": "pending", "blockedBy": [10]}
+  ],
+  "lastUpdated": "2026-05-27"
+}
