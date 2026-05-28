@@ -47,9 +47,11 @@ Introduce a new helper `keccak_to_field(bytes) -> Field` (contract) / `keccakToF
   import { Field } from "./field.js";
   export function keccakToField(b: Uint8Array): Field {
     const digest = keccak_256(b);                    // 32 bytes
-    return fieldFromLeBytes(digest.subarray(0, 31)); // matches contract reduction
+    return Field.fromBytesLe(digest.subarray(0, 31)); // matches contract reduction
   }
   ```
+  This requires a new `Field.fromBytesLe(bytes)` static in `sdk/packages/core/src/field.ts` that mirrors `contract/src/poseidon.rs::Field::from_bytes_le` byte-for-byte (read the slice little-endian; iterate from the highest index down so byte 0 is the least significant). The implementation plan adds this helper before any caller.
+  `@noble/hashes` is already a transitive dependency of `@shielded-near/core` via `@noble/curves`; the plan pins it as a direct dep to make the keccak import explicit.
 
 Replace **only the four view_ct hash sites** with the new helper:
 - `contract/src/deposit.rs::do_deposit` — 1 site
@@ -100,7 +102,8 @@ New file `sdk/test-vectors/view_ct_keccak.json` with the same shape as the exist
 - `short_ascii` (`"viewct"`)
 - `31_zeros` (boundary: exactly the truncation cutoff)
 - `32_zeros` (boundary: full digest)
-- `realistic_view_ct` (a known 351-byte sealed payload; ensures the optimisation actually addresses the original blow-up)
+- `high_bit_set` (an input whose keccak digest's first byte has its high bit set; validates that the LE interpretation handles unsigned >= 0x80 bytes correctly — 248 bits < 254 bits of BN254 Fr, so no modular reduction can mask a bug here)
+- `realistic_view_ct` (the `encodeCiphertext` output for a fully-formed sealed `ViewDisclosure` produced by `sdk/packages/sdk/src/wallet.ts::buildTransferProved`; recorded so the auditor can independently reproduce the gas-budget claim from artifacts alone)
 
 Both `contract/src/deposit.rs::tests::keccak_to_field_vectors` (Rust) and `sdk/packages/core/src/keccak_to_field.test.ts` (TS) read the same JSON. Same discipline as the Poseidon vectors — keeps the two implementations byte-for-byte locked across language boundaries.
 
@@ -133,3 +136,7 @@ Same as `2026-05-26-real-groth16-prover-e2e.md`: this design does not change the
 - **Hash raw sealed bytes (keep Poseidon)**: halves chunk count (~62 `poseidon2` calls ≈ 250–310 Tgas). Borderline-still-over-cap, no headroom for future contract growth. Larger SDK + cross-vector churn for half the win.
 - **Off-chain commitment passed alongside (proof binds an SDK-claimed commitment, contract checks ciphertext-matches-commitment)**: equivalent in spirit to this design, more moving parts (the contract still has to compute *some* function over the ciphertext bytes to verify, which is where the gas blew up). Identical end-state, more rope.
 - **Drop the binding (event-only view_ct)**: cheapest, but loses relayer-tamper resistance. Out of bounds.
+
+## Plan-level housekeeping
+
+The implementation plan derived from this spec must, as a small final step, delete or strike through the "Follow-up #1 (transfer gas blowup)" note in `docs/superpowers/plans/2026-05-27-real-client-cli-demo.md` since this work closes it, and remove the `DEMO_TRANSFER=1` env gate from `demo/src/run-demo.ts` (added by the prior plan's cleanup commit) so the demo's default run exercises the full deposit→transfer→withdraw flow with the asserted balance check.
