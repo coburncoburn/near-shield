@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@shielded-near/core": "workspace:*",
+    "@shielded-near/relayer": "workspace:*",
     "@shielded-near/sdk": "workspace:*",
     "near-api-js": "^5.0.0"
   },
