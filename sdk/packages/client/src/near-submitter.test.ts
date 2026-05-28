@@ -90,7 +90,7 @@ describe("NearCallerSubmitter", () => {
     expect(proof).toEqual([1, 2, 3, 4, 255]);
   });
 
-  it("passes gas=300_000_000_000_000n and attachedDeposit=1n", async () => {
+  it("passes gas=300_000_000_000_000n and attachedDeposit=1 NEAR (covers pool storage rent)", async () => {
     const { caller, captured } = makeFakeCaller();
     const submitter = new NearCallerSubmitter(caller, POOL_ID);
 
@@ -98,7 +98,7 @@ describe("NearCallerSubmitter", () => {
 
     const opts = captured()!.opts;
     expect(opts?.gas).toBe(300_000_000_000_000n);
-    expect(opts?.attachedDeposit).toBe(1n);
+    expect(opts?.attachedDeposit).toBe(10n ** 24n);
   });
 
   it("returns the transactionHash from the caller result", async () => {

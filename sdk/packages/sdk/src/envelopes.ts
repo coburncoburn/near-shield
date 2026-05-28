@@ -147,14 +147,23 @@ export function toWithdrawArgs(tx: BuiltTx): WithdrawArgs {
   };
 }
 
+// The pool charges storage rent on state-mutating calls (see
+// contract/src/storage.rs): transfer reserves 1024 bytes (~0.0102 NEAR) and
+// withdraw 256 bytes (~0.00256 NEAR). Excess is refunded on success. We attach
+// a 1 NEAR margin so callers don't have to know byte counts.
+const ONE_NEAR_YOCTO = (10n ** 24n).toString();
+
 /** Build the function-call envelope for a transfer (caller submits directly). */
 export function toTransferCall(tx: BuiltTx, poolAccountId: string): NearFunctionCall {
   return {
     contractId: poolAccountId,
     methodName: "transfer",
     args: toTransferArgs(tx) as unknown as Record<string, unknown>,
-    attachedDeposit: "0",
-    gas: ONE_HUNDRED_TGAS,
+    attachedDeposit: ONE_NEAR_YOCTO,
+    // Groth16 verification (two pairings on the alt_bn128 host fns) plus state
+    // writes don't fit in 100 Tgas. 300 Tgas (NEAR's per-tx max) matches the
+    // contract integration tests and the relayer's withdraw budget.
+    gas: THREE_HUNDRED_TGAS,
   };
 }
 
@@ -164,8 +173,8 @@ export function toWithdrawCall(tx: BuiltTx, poolAccountId: string): NearFunction
     contractId: poolAccountId,
     methodName: "withdraw",
     args: toWithdrawArgs(tx) as unknown as Record<string, unknown>,
-    attachedDeposit: "0",
-    gas: ONE_HUNDRED_TGAS,
+    attachedDeposit: ONE_NEAR_YOCTO,
+    gas: THREE_HUNDRED_TGAS,
   };
 }
 

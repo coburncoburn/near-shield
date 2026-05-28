@@ -1,7 +1,13 @@
 packages:
   - "sdk/packages/*"
+  - "demo"
 allowBuilds:
+  esbuild: true
+  near-sandbox: true
+  near-workspaces: true
   secp256k1: true
 onlyBuiltDependencies:
   - esbuild
+  - near-sandbox
+  - near-workspaces
   - secp256k1

@@ -13,6 +13,7 @@ export {
   type ProveRequest,
 } from "./prover.js";
 export {
+  encodeCiphertext,
   toDepositArgs,
   toFtTransferCallArgs,
   toTransferArgs,

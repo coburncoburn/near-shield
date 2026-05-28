@@ -19,7 +19,9 @@ export class NearCallerSubmitter implements NearTxSubmitter {
         relayer_fee: req.relayerFee,
         proof: Array.from(req.proof),
       },
-      { gas: 300_000_000_000_000n, attachedDeposit: 1n },
+      // Pool charges storage rent (WITHDRAW_BYTES ~ 0.00256 NEAR) on withdraw;
+      // excess refunds on success. 1 NEAR is plenty and matches contract tests.
+      { gas: 300_000_000_000_000n, attachedDeposit: 10n ** 24n },
     );
     return transactionHash;
   }

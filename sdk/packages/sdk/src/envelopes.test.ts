@@ -111,7 +111,8 @@ describe("envelopes - transfer", () => {
     const env = toTransferCall(tx, "pool.near");
     expect(env.contractId).toBe("pool.near");
     expect(env.methodName).toBe("transfer");
-    expect(env.attachedDeposit).toBe("0");
+    // 1 NEAR covers per-call storage rent the pool charges; excess refunded.
+    expect(env.attachedDeposit).toBe((10n ** 24n).toString());
     // args is opaque to the envelope but should still be present as object
     expect(typeof env.args).toBe("object");
     expect(Array.isArray((env.args as { nullifiers: unknown }).nullifiers)).toBe(true);

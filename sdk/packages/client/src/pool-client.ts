@@ -29,7 +29,7 @@ export class PoolClient {
   async transfer(tx: BuiltTx): Promise<NoteCiphertext[]> {
     const call = toTransferCall(tx, this.poolId);
     const { logs } = await this.caller.call(call.contractId, call.methodName, call.args,
-      { gas: BigInt(call.gas) });
+      { gas: BigInt(call.gas), attachedDeposit: BigInt(call.attachedDeposit) });
     return this.ingest(logs);
   }
 
