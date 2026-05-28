@@ -1,0 +1,12 @@
+{
+  "planPath": "docs/superpowers/plans/2026-05-28-view-ct-binding-keccak.md",
+  "tasks": [
+    {"id": 19, "subject": "Task 1: Field.fromBytesLe + DRY hash_bytes", "status": "pending"},
+    {"id": 20, "subject": "Task 2: Rust keccak_to_field + cross-lang vectors", "status": "pending"},
+    {"id": 21, "subject": "Task 3: TS keccakToField against shared vectors", "status": "pending", "blockedBy": [19, 20]},
+    {"id": 22, "subject": "Task 4: Swap 4 contract view_ct hash sites", "status": "pending", "blockedBy": [20]},
+    {"id": 23, "subject": "Task 5: Swap SDK viewCtHash + capture realistic vector", "status": "pending", "blockedBy": [21]},
+    {"id": 24, "subject": "Task 6: Full demo + housekeeping", "status": "pending", "blockedBy": [22, 23]}
+  ],
+  "lastUpdated": "2026-05-28T00:00:00Z"
+}
