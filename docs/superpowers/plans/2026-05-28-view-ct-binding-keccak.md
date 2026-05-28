@@ -304,7 +304,10 @@ grep -rn "view_ct_hash\|hashBytesToField\|hash_bytes_to_field" contract/ sdk/pac
 ```
 Expected hits and treatment:
 - `contract/src/withdraw.rs` `recipient`/`relayer` hashes — UNCHANGED (Poseidon for account ids; these stay on `hash_bytes_to_field`).
-- `contract/tests/e2e_real_proofs.rs` — recomputes view_ct_hash off-chain to feed the witness; **update its helper to call `keccak_to_field`** so the prover's witness matches the contract's recomputation. Look for `contract_hash_bytes(view_ct.as_bytes())` or similar; switch to `shielded_pool::deposit::keccak_to_field(view_ct.as_bytes())`.
+- `contract/tests/e2e_real_proofs.rs` — recomputes hashes off-chain to feed the prover witness. **CRITICAL — do NOT do a blanket alias swap.** The current alias `use shielded_pool::deposit::hash_bytes_to_field as contract_hash_bytes;` (line 28) is used at **seven** call sites; five hash view_ct (must move to keccak) and **two hash account ids (must stay Poseidon)**:
+  - **Move to keccak** (the five view_ct sites — lines 259, 286, 474, 515, 516, approximately): each is `contract_hash_bytes(<view_ct or vct_*>.as_bytes())`.
+  - **Keep on Poseidon** (the two account-id sites — lines 282 and 283, approximately): `contract_hash_bytes(w_recipient_id.as_bytes())` / `contract_hash_bytes(w_relayer_id.as_bytes())`. These mirror the contract's withdraw, where recipient/relayer stay on `hash_bytes_to_field`.
+  Procedure: keep the existing `contract_hash_bytes` alias for the two account-id sites; ADD a second alias `use shielded_pool::deposit::keccak_to_field as contract_view_ct_hash;` and migrate ONLY the five view_ct call sites to it. Verify with `grep -n contract_hash_bytes contract/tests/e2e_real_proofs.rs` — after editing, exactly two hits remain (the recipient + relayer lines), and `grep -n contract_view_ct_hash` shows five.
 - `contract/src/deposit.rs::tests::dump_view_ct_hash_vectors` — leave it; it's about the Poseidon vectors file, which we're not touching.
 - `sdk/packages/sdk/src/wallet.ts` `viewCtHash` helper — handled in Task 5.
 - `sdk/packages/sdk/src/wallet.viewcthash.test.ts` — handled in Task 5.
