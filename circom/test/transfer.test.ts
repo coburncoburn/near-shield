@@ -9,11 +9,9 @@
  *   6. input_leaf_index_above_depth → rejected
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { Field, commitNote, computeNullifier, poseidon2 } from "@shielded-near/core";
+import { BN254_MODULUS, Field, commitNote, computeNullifier, poseidon2 } from "@shielded-near/core";
 import { MerkleTree } from "@shielded-near/client";
 import { load } from "./helpers.js";
-
-const BN254_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 /**
  * Canonical honest transfer inputs.
@@ -86,7 +84,7 @@ describe("Transfer circuit", () => {
   let circuit: Awaited<ReturnType<typeof load>>;
   beforeAll(async () => {
     circuit = await load("transfer.circom");
-  }, 120_000);
+  });
 
   it("honest transfer → satisfiable", async () => {
     const input = honestTransferInput();
@@ -138,7 +136,6 @@ describe("Transfer circuit", () => {
       ...honestTransferInput(),
       out0Amount: huge,
       out1Amount: out1,
-      out1Owner: owner.value,
       commitmentOut0: badCommitmentOut0.value,
       commitmentOut1: badCommitmentOut1.value,
     };
@@ -165,60 +162,44 @@ describe("Transfer circuit", () => {
   });
 
   it("same_input_note → rejected", async () => {
-    // Both inputs are the same note at leaf index 0 → nullifier0 == nullifier1.
-    // The IsEqual(nullifier0, nullifier1) === 0 constraint rejects this.
+    // Both inputs are the same note (amount=60, blinding=1) at leaf index 0.
+    // nullifier0 == nullifier1 because sk, commitment, and leafIndex are identical.
+    // The IsEqual(nullifier0, nullifier1) === 0 constraint fires and rejects the
+    // witness; circom_tester's sanityCheck=true (second arg to calculateWitness)
+    // is what surfaces that constraint violation as a throw.
     const sk = new Field(7n);
     const owner = poseidon2(sk, new Field(0n));
     const auditor = new Field(22n);
     const recipAuditor = new Field(33n);
 
-    const amt = 60n;
-    const blind = new Field(1n);
-    const c_in = commitNote({ amount: amt, ownerPubkey: owner, auditorPubkey: auditor, blinding: blind });
+    const c_in = commitNote({ amount: 60n, ownerPubkey: owner, auditorPubkey: auditor, blinding: new Field(1n) });
 
-    // Tree holds same commitment at both leaves; path0 is the path for leaf 0
+    // Tree holds the same commitment at both leaves; path0 is used for both inputs.
     const tree = new MerkleTree();
     tree.append(c_in); // index 0
     tree.append(c_in); // index 1 (same commitment)
-    const root = tree.root();
     const path0 = tree.pathFor(0n);
 
-    // Both nullifiers are the same (same sk, same commitment, same index 0)
+    // Both nullifiers are the same (same sk, same commitment, same index 0).
     const n = computeNullifier(sk, c_in, 0n);
 
-    // Outputs sum to 120 = 60+60 (double-counted total)
+    // Outputs sum to 120 = 60+60 (double-counted total).
     const cout0 = commitNote({ amount: 120n, ownerPubkey: new Field(100n), auditorPubkey: recipAuditor, blinding: new Field(3n) });
     const cout1 = commitNote({ amount: 0n, ownerPubkey: owner, auditorPubkey: recipAuditor, blinding: new Field(4n) });
 
     const badInput = {
-      merkleRoot: root.value,
-      nullifier0: n.value,
+      ...honestTransferInput(),
+      merkleRoot: tree.root().value,
       nullifier1: n.value,
       commitmentOut0: cout0.value,
       commitmentOut1: cout1.value,
-      auditorPubkey: auditor.value,
-      recipientAuditorPubkey: recipAuditor.value,
-      viewCtHashSender: 13n,
-      viewCtHashRecipient: 14n,
-      in0Amount: amt,
-      in0Owner: owner.value,
-      in0Blinding: blind.value,
-      in0LeafIndex: 0n,
       in0Path: path0.map((f) => f.value),
-      in1Amount: amt,
-      in1Owner: owner.value,
-      in1Blinding: blind.value,
+      in1Amount: 60n,
+      in1Blinding: 1n,
       in1LeafIndex: 0n,
       in1Path: path0.map((f) => f.value),
-      spendingKey: sk.value,
       out0Amount: 120n,
-      out0Owner: 100n,
-      out0Blinding: 3n,
       out1Amount: 0n,
-      out1Owner: owner.value,
-      out1Blinding: 4n,
-      viewCtHashSenderWitness: 13n,
-      viewCtHashRecipientWitness: 14n,
     };
     await expect(circuit.calculateWitness(badInput, true)).rejects.toThrow();
   });

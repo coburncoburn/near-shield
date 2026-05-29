@@ -1,3 +1,11 @@
+// Transfer circuit — 2-in / 2-out shielded transfer for HIP-4.
+// Public inputs (9, contract order): merkleRoot, nullifier0, nullifier1,
+//   commitmentOut0, commitmentOut1, auditorPubkey, recipientAuditorPubkey,
+//   viewCtHashSender, viewCtHashRecipient.
+// Auditor split: input notes are committed under auditorPubkey (sender's
+//   auditor); output notes are committed under recipientAuditorPubkey.
+// Value conservation: in0Amount + in1Amount === out0Amount + out1Amount,
+//   with RangeCheck(128) on all four amounts (prevents wraparound-mint).
 pragma circom 2.1.6;
 include "lib/commit.circom";
 include "lib/merkle.circom";
