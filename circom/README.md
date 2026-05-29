@@ -9,3 +9,22 @@ Sub-project B (constraint equivalence proofs) is complete.
 proving and verification keys will be produced during Sub-project C (the
 Groth16 trusted-setup ceremony) and must never be substituted with anything
 generated here.
+
+## Measured constraint counts (circom 2.1.9)
+
+| Circuit  | Non-linear constraints |
+|----------|------------------------|
+| deposit  | 297                    |
+| withdraw | 6,048                  |
+| transfer | 12,578                 |
+
+Transfer is the largest circuit. `ceil(log2(12578)) = 14` (since 2^13 = 8192 < 12578 ≤ 2^14 = 16384),
+so **ptau power P = 14** is used for DEV key generation (`scripts/dev-setup.sh`).
+
+## DEV key generation
+
+```bash
+pnpm --filter @shielded-near/circom build   # compile circuits → build/*.r1cs + *_js/*.wasm
+bash circom/scripts/dev-setup.sh             # generate build/keys/*_dev.zkey + *_vk.json
+pnpm --filter @shielded-near/circom exec vitest run test/prove-verify.test.ts
+```
