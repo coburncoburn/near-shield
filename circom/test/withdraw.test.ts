@@ -62,7 +62,7 @@ export function honestWithdrawInput() {
     spendingKey: sk.value,
     leafIndex: 0n,
     merklePath: merklePath.map((f) => f.value),
-    viewCtHashWitness: viewCtHash,
+    viewCtHashWitness: viewCtHash, // mirrors public viewCtHash — intentional duplication
   };
 }
 
@@ -90,6 +90,7 @@ describe("Withdraw circuit", () => {
   });
 
   it("forged_merkle_path → rejected", async () => {
+    // one-leaf fake tree: root differs from honest, so MerkleInclusion rejects
     // Replace merkleRoot + merklePath with those of a tree containing a different note (999).
     const fakeTree = new MerkleTree();
     fakeTree.append(new Field(999n));
@@ -119,6 +120,10 @@ describe("Withdraw circuit", () => {
     // leafIndex = 2^20: low 20 bits == 0, so merkle inclusion holds (uses leaf 0 path).
     // Recompute nullifier for evil_index so that constraint holds too.
     // Only Num2Bits(20) on leafIndex rejects.
+    //
+    // Local re-derivation mirrors honestWithdrawInput()'s exact note params
+    // (sk=7, auditor=22, blinding=33, amount=100) because the builder doesn't
+    // expose the internal commitment — we need it to recompute the nullifier.
     const sk = new Field(7n);
     const owner = poseidon2(sk, new Field(0n));
     const auditor = new Field(22n);
