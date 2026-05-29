@@ -9,6 +9,30 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { Field, commitNote } from "@shielded-near/core";
 import { load } from "./helpers.js";
 
+/**
+ * Canonical honest deposit inputs.
+ * Exported so Task 6's prove-verify test can import and reuse them.
+ * Mirrors deposit.rs: amount=100, owner=11, auditor=22, blinding=33.
+ */
+export function honestDepositInput() {
+  const amount = 100n;
+  const ownerPubkey = new Field(11n);
+  const auditorPubkey = new Field(22n);
+  const blinding = new Field(33n);
+  const viewCtHash = 7n; // arbitrary hash value
+  // Field wrappers are required by the commitNote oracle; the circuit receives .value (bigint).
+  const commitment = commitNote({ amount, ownerPubkey, auditorPubkey, blinding });
+  return {
+    commitment: commitment.value,
+    amount,
+    auditorPubkey: auditorPubkey.value,
+    viewCtHash,
+    ownerPubkey: ownerPubkey.value,
+    blinding: blinding.value,
+    viewCtHashWitness: viewCtHash,
+  };
+}
+
 describe("Deposit circuit", () => {
   // Shared circuit instance — load once for the whole suite.
   let circuit: Awaited<ReturnType<typeof load>>;
@@ -16,57 +40,25 @@ describe("Deposit circuit", () => {
     circuit = await load("deposit.circom");
   });
 
-  // Deterministic test vectors (mirrors deposit.rs: amount=100, owner=11, auditor=22, blinding=33).
-  const amount = 100n;
-  const ownerPubkey = new Field(11n);
-  const auditorPubkey = new Field(22n);
-  const blinding = new Field(33n);
-  const viewCtHash = 7n; // arbitrary hash value
-
   it("honest deposit → satisfiable", async () => {
-    const commitment = commitNote({ amount, ownerPubkey, auditorPubkey, blinding });
-
-    const input = {
-      commitment: commitment.value,
-      amount,
-      auditorPubkey: auditorPubkey.value,
-      viewCtHash,
-      ownerPubkey: ownerPubkey.value,
-      blinding: blinding.value,
-      viewCtHashWitness: viewCtHash,
-    };
-
+    const input = honestDepositInput();
     const witness = await circuit.calculateWitness(input, true);
     await circuit.checkConstraints(witness);
   });
 
   it("wrong amount → rejected", async () => {
     // commitment built for amount=100, but we hand amount=200 to the circuit
-    const commitment = commitNote({ amount, ownerPubkey, auditorPubkey, blinding });
-
     const badInput = {
-      commitment: commitment.value,
-      amount: 200n,            // mismatch
-      auditorPubkey: auditorPubkey.value,
-      viewCtHash,
-      ownerPubkey: ownerPubkey.value,
-      blinding: blinding.value,
-      viewCtHashWitness: viewCtHash,
+      ...honestDepositInput(),
+      amount: 200n, // mismatch
     };
 
     await expect(circuit.calculateWitness(badInput, true)).rejects.toThrow();
   });
 
   it("view_ct_hash != witness → rejected", async () => {
-    const commitment = commitNote({ amount, ownerPubkey, auditorPubkey, blinding });
-
     const badInput = {
-      commitment: commitment.value,
-      amount,
-      auditorPubkey: auditorPubkey.value,
-      viewCtHash,
-      ownerPubkey: ownerPubkey.value,
-      blinding: blinding.value,
+      ...honestDepositInput(),
       viewCtHashWitness: 999n, // mismatch: witness != public viewCtHash
     };
 
