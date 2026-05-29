@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -6,7 +6,7 @@ import { load } from "./helpers.js";
 
 const vectors = JSON.parse(
   readFileSync(
-    path.resolve(fileURLToPath(import.meta.url), "../../../sdk/test-vectors/poseidon.json"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../sdk/test-vectors/poseidon.json"),
     "utf8",
   ),
 );
@@ -17,6 +17,7 @@ describe("poseidon parity kill-gate", () => {
     const c = await load("test/poseidon2_test.circom");
     for (const v of vectors.poseidon2) {
       const w = await c.calculateWitness({ a: v.inputs[0], b: v.inputs[1] }, true);
+      await c.checkConstraints(w);
       await c.assertOut(w, { out: toBig(v.expected) });
     }
   });
@@ -25,6 +26,7 @@ describe("poseidon parity kill-gate", () => {
     const c = await load("test/poseidon4_test.circom");
     for (const v of vectors.poseidon4) {
       const w = await c.calculateWitness({ in: v.inputs }, true);
+      await c.checkConstraints(w);
       await c.assertOut(w, { out: toBig(v.expected) });
     }
   });
