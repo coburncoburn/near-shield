@@ -2,6 +2,7 @@ packages:
   - "sdk/packages/*"
   - "sdk/test-vectors/scripts"
   - "demo"
+  - "circom"
 allowBuilds:
   esbuild: true
   near-sandbox: true
