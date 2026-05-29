@@ -122,9 +122,12 @@ contract-roundtrip fully verifies it.
   - `note_amount === amount`; `note_auditor === auditor`;
   - **`amount ≥ relayer_fee`** via 64-bit decomposition of `a`, `b`, and `a − b`;
   - view_ct_hash binding; leaf-index 20-bit bound; depth-20 Merkle inclusion.
-- `recipient`/`relayer`/`relayer_fee` are bound *only* by being public inputs (the arkworks
-  code uses `enforce_equal(x, x)` no-ops). In Circom bind them with explicit trivial
-  constraints so the compiler keeps them in the public-signal set.
+- `recipient` and `relayer` are bound *only* by being public inputs (the arkworks code
+  uses `enforce_equal(x, x)` no-ops, `withdraw.rs:81-82`). In Circom bind **just these two**
+  with explicit trivial constraints so the compiler keeps them in the public-signal set.
+  `relayer_fee` is **not** in this group — it already carries a real constraint via
+  `amount ≥ relayer_fee` (`enforce_u64_geq`), so it must not get an additional redundant
+  trivial binding.
 
 ## Validation & testing (where the safety lives)
 
