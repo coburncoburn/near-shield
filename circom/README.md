@@ -3,7 +3,10 @@ the Circom circuit sources and the snarkjs-based build toolchain for the
 shielded-pool's deposit, transfer, and withdraw circuits. The arkworks prover
 in `tools/prover` and the TypeScript equivalence oracle in
 `@shielded-near/core` are retained as the reference implementation until
-Sub-project B (constraint equivalence proofs) is complete.
+Sub-project B (the integration swap: snarkjs prove path, VK→contract
+serialization adapter, dev-key fingerprint guard, prover/relayer/demo
+cutover) is complete. The constraint-equivalence proofs themselves are
+Sub-project A (this package).
 
 **ALL keys produced by this package are DEV-only** — real, ceremony-grade
 proving and verification keys will be produced during Sub-project C (the
