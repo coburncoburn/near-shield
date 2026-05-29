@@ -4,7 +4,7 @@
     {"id": 1, "subject": "Task 0: Toolchain + circom/ workspace scaffold", "status": "completed"},
     {"id": 2, "subject": "Task 1: Poseidon parity kill-gate", "status": "completed", "blockedBy": [1]},
     {"id": 3, "subject": "Task 2: Shared lib templates + parity corpus", "status": "completed", "blockedBy": [2]},
-    {"id": 4, "subject": "Task 3: deposit.circom + equivalence tests", "status": "pending", "blockedBy": [3]},
+    {"id": 4, "subject": "Task 3: deposit.circom + equivalence tests", "status": "completed", "blockedBy": [3]},
     {"id": 5, "subject": "Task 4: transfer.circom + full negative corpus", "status": "pending", "blockedBy": [3]},
     {"id": 6, "subject": "Task 5: withdraw.circom + equivalence tests", "status": "pending", "blockedBy": [3]},
     {"id": 7, "subject": "Task 6: DEV keys + prove→verify roundtrip + ptau sizing", "status": "pending", "blockedBy": [4, 5, 6]}
