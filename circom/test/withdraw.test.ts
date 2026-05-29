@@ -11,60 +11,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { Field, commitNote, computeNullifier, poseidon2 } from "@shielded-near/core";
 import { MerkleTree } from "@shielded-near/client";
 import { load } from "./helpers.js";
-
-/**
- * Canonical honest withdraw inputs.
- * Exported so future prove-verify tests can import and reuse them.
- * Mirrors withdraw.rs::honest():
- *   sk=7, owner=poseidon2(7,0), auditor=22, blinding=33, amount=100,
- *   recipient=99, relayer=77, relayerFee=5, viewCtHash=13, leafIndex=0.
- */
-export function honestWithdrawInput() {
-  const sk = new Field(7n);
-  const owner = poseidon2(sk, new Field(0n));
-  const auditor = new Field(22n);
-  const blinding = new Field(33n);
-  const amount = 100n;
-  const recipient = 99n;
-  const relayer = 77n;
-  const relayerFee = 5n;
-  const viewCtHash = 13n;
-
-  const commitment = commitNote({
-    amount,
-    ownerPubkey: owner,
-    auditorPubkey: auditor,
-    blinding,
-  });
-
-  const tree = new MerkleTree();
-  tree.append(commitment); // index 0
-
-  const merkleRoot = tree.root();
-  const merklePath = tree.pathFor(0n);
-  const nullifier = computeNullifier(sk, commitment, 0n);
-
-  return {
-    // public
-    merkleRoot: merkleRoot.value,
-    nullifier: nullifier.value,
-    recipient,
-    amount,
-    relayer,
-    relayerFee,
-    auditorPubkey: auditor.value,
-    viewCtHash,
-    // private
-    noteAmount: amount,
-    noteOwner: owner.value,
-    noteAuditor: auditor.value,
-    noteBlinding: blinding.value,
-    spendingKey: sk.value,
-    leafIndex: 0n,
-    merklePath: merklePath.map((f) => f.value),
-    viewCtHashWitness: viewCtHash, // mirrors public viewCtHash — intentional duplication
-  };
-}
+import { honestWithdrawInput } from "./fixtures.js";
 
 describe("Withdraw circuit", () => {
   // Shared circuit instance — load once for the whole suite.

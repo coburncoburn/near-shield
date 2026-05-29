@@ -24,13 +24,19 @@ $SNARKJS powersoftau prepare phase2 build/keys/pot_1.ptau build/keys/pot_final.p
 
 for c in deposit transfer withdraw; do
   echo "=== Groth16 setup: $c ==="
-  $SNARKJS groth16 setup "build/${c}.r1cs" build/keys/pot_final.ptau "build/keys/${c}_0.zkey"
+  $SNARKJS groth16 setup "build/${c}.r1cs" build/keys/pot_final.ptau "build/keys/${c}_0.zkey" -v
 
   echo "=== Zkey contribute: $c ==="
   echo "dev-entropy-${c}" | $SNARKJS zkey contribute "build/keys/${c}_0.zkey" "build/keys/${c}_dev.zkey" --name=dev -v
 
   echo "=== Export verification key: $c ==="
-  $SNARKJS zkey export verificationkey "build/keys/${c}_dev.zkey" "build/keys/${c}_vk.json"
+  $SNARKJS zkey export verificationkey "build/keys/${c}_dev.zkey" "build/keys/${c}_vk.json" -v
+done
+
+echo "=== Cleaning up intermediate artifacts ==="
+rm -f build/keys/pot_0.ptau build/keys/pot_1.ptau
+for c in deposit transfer withdraw; do
+  rm -f "build/keys/${c}_0.zkey"
 done
 
 echo ""

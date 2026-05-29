@@ -6,32 +6,8 @@
  *   3. view_ct_hash != witness → rejected
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { Field, commitNote } from "@shielded-near/core";
 import { load } from "./helpers.js";
-
-/**
- * Canonical honest deposit inputs.
- * Exported so Task 6's prove-verify test can import and reuse them.
- * Mirrors deposit.rs: amount=100, owner=11, auditor=22, blinding=33.
- */
-export function honestDepositInput() {
-  const amount = 100n;
-  const ownerPubkey = new Field(11n);
-  const auditorPubkey = new Field(22n);
-  const blinding = new Field(33n);
-  const viewCtHash = 7n; // arbitrary hash value
-  // Field wrappers are required by the commitNote oracle; the circuit receives .value (bigint).
-  const commitment = commitNote({ amount, ownerPubkey, auditorPubkey, blinding });
-  return {
-    commitment: commitment.value,
-    amount,
-    auditorPubkey: auditorPubkey.value,
-    viewCtHash,
-    ownerPubkey: ownerPubkey.value,
-    blinding: blinding.value,
-    viewCtHashWitness: viewCtHash,
-  };
-}
+import { honestDepositInput } from "./fixtures.js";
 
 describe("Deposit circuit", () => {
   // Shared circuit instance — load once for the whole suite.

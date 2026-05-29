@@ -11,9 +11,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import * as snarkjs from "snarkjs";
 
-import { honestDepositInput } from "./deposit.test.js";
-import { honestTransferInput } from "./transfer.test.js";
-import { honestWithdrawInput } from "./withdraw.test.js";
+import { honestDepositInput, honestTransferInput, honestWithdrawInput } from "./fixtures.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -31,9 +29,6 @@ function vkPath(circuit: string) {
 type CircuitName = "deposit" | "transfer" | "withdraw";
 
 const circuits: CircuitName[] = ["deposit", "transfer", "withdraw"];
-
-// Check which circuits have keys available.
-const keysPresent = circuits.every((c) => existsSync(zkeyPath(c)) && existsSync(vkPath(c)));
 
 describe(
   "Groth16 prove→verify roundtrip",
