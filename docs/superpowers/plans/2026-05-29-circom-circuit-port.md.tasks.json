@@ -7,7 +7,7 @@
     {"id": 4, "subject": "Task 3: deposit.circom + equivalence tests", "status": "completed", "blockedBy": [3]},
     {"id": 5, "subject": "Task 4: transfer.circom + full negative corpus", "status": "completed", "blockedBy": [3]},
     {"id": 6, "subject": "Task 5: withdraw.circom + equivalence tests", "status": "completed", "blockedBy": [3]},
-    {"id": 7, "subject": "Task 6: DEV keys + prove→verify roundtrip + ptau sizing", "status": "pending", "blockedBy": [4, 5, 6]}
+    {"id": 7, "subject": "Task 6: DEV keys + prove→verify roundtrip + ptau sizing", "status": "completed", "blockedBy": [4, 5, 6]}
   ],
   "lastUpdated": "2026-05-29T00:00:00Z"
 }
