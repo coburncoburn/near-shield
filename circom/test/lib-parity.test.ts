@@ -3,9 +3,7 @@
  * byte-identical values to the SDK oracle (@shielded-near/core + client).
  */
 import { describe, it } from "vitest";
-import { Field } from "@shielded-near/core";
-import { commitNote, computeNullifier } from "@shielded-near/core";
-import { poseidon2 } from "@shielded-near/core";
+import { Field, commitNote, computeNullifier, poseidon2 } from "@shielded-near/core";
 import { MerkleTree } from "@shielded-near/client";
 import { load } from "./helpers.js";
 
@@ -47,10 +45,10 @@ describe("CommitNote parity", () => {
         ownerPubkey: owner.value,
         auditorPubkey: auditor.value,
         blinding: blinding.value,
-      });
+      }, true);
 
-      await circuit.assertOut(witness, { out: oracleResult.value });
       await circuit.checkConstraints(witness);
+      await circuit.assertOut(witness, { out: oracleResult.value });
     }
   });
 });
@@ -69,10 +67,10 @@ describe("OwnerPubkey parity", () => {
 
       const witness = await circuit.calculateWitness({
         spendingKey: sk.value,
-      });
+      }, true);
 
-      await circuit.assertOut(witness, { out: oracleResult.value });
       await circuit.checkConstraints(witness);
+      await circuit.assertOut(witness, { out: oracleResult.value });
     }
   });
 });
@@ -99,10 +97,10 @@ describe("Nullifier parity", () => {
         spendingKey: sk.value,
         commitment: commitment.value,
         leafIndex: leafIndex,
-      });
+      }, true);
 
-      await circuit.assertOut(witness, { out: oracleResult.value });
       await circuit.checkConstraints(witness);
+      await circuit.assertOut(witness, { out: oracleResult.value });
     }
   });
 });
@@ -123,11 +121,12 @@ describe("MerkleInclusion parity", () => {
       indices.push(BigInt(idx));
     }
 
+    const root = tree.root();
+
     // Test each leaf.
     for (let i = 0; i < leaves.length; i++) {
       const leafIndex = indices[i];
       const leaf = leaves[i];
-      const root = tree.root();
       const pathElements = tree.pathFor(leafIndex);
 
       // Decompose leafIndex into 20 LE bits.
@@ -142,7 +141,7 @@ describe("MerkleInclusion parity", () => {
         root: root.value,
         indexBits,
         pathElements: pathElements.map((f) => f.value),
-      });
+      }, true);
 
       await circuit.checkConstraints(witness);
     }
