@@ -22,7 +22,7 @@ export type ArtifactProvider = (
  * Map a generic `ProveRequest` to the flat input object expected by the
  * circom-generated witness calculator.
  *
- * @throws {Error} Not yet implemented — see Task 2.
+ * @throws {Error} Not yet implemented — see Task 3.
  */
 export function proveRequestToCircomInput(
   _req: ProveRequest

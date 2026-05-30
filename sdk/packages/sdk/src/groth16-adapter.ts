@@ -27,6 +27,14 @@ export interface SnarkjsVk {
   vk_gamma_2: G2;
   vk_delta_2: G2;
   IC: G1[];
+  /** Present in real vk.json exports; unused by the adapter. */
+  protocol?: string;
+  /** Present in real vk.json exports; unused by the adapter. */
+  curve?: string;
+  /** Present in real vk.json exports; unused by the adapter. */
+  nPublic?: number;
+  /** Present in real vk.json exports; unused by the adapter. */
+  vk_alphabeta_12?: string[][][];
 }
 
 /**
