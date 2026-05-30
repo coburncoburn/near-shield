@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@noble/curves": "^1.6.0",
-    "@shielded-near/core": "workspace:*"
+    "@shielded-near/core": "workspace:*",
+    "snarkjs": "^0.7.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

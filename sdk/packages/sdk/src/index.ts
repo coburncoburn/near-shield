@@ -25,3 +25,17 @@ export {
   type TransferArgs,
   type WithdrawArgs,
 } from "./envelopes.js";
+export {
+  vkJsonToContractBytes,
+  snarkjsProofToBytes,
+  type G1,
+  type G2,
+  type SnarkjsProof,
+  type SnarkjsVk,
+} from "./groth16-adapter.js";
+export {
+  SnarkjsProver,
+  proveRequestToCircomInput,
+  type CircuitName,
+  type ArtifactProvider,
+} from "./snarkjs-prover.js";
