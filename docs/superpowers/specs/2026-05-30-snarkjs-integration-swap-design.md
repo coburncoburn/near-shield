@@ -35,10 +35,24 @@ and external audit. B is sandbox/DEV-key only.
   Promise<Uint8Array> }` returning the 256-byte `A‖B‖C` (EIP-196/197). Implementations today:
   `StubProver` (mock) and `SubprocessProver` (shells out to the arkworks binary). The wallet's
   `build*Proved(req, prover)` methods take a `Prover`.
-- `ProveRequest` = `{ circuit, publicInputs: string[] (0x-hex, contract order), witness:
-  Record<string,unknown> }`. The wallet's `witness` keys **already match the circom private
-  signal names** (e.g. deposit emits `ownerPubkey`, `blinding`, `viewCtHashWitness`), so the
-  mapping to a circom input is mostly pass-through plus a positional public-input name list.
+- `ProveRequest` = `{ circuit, publicInputs: string[] (32-byte big-endian 0x-hex, contract
+  order), witness: Record<string,unknown> }`. The wallet's `witness` keys mostly match the circom
+  private signal names, **but not entirely** — there is a per-circuit rename table (verified
+  against `wallet.ts` and the circom circuits):
+  - **deposit:** all match (`ownerPubkey`, `blinding`, `viewCtHashWitness`). No renames.
+  - **transfer:** wallet emits `in0OwnerPubkey/in1OwnerPubkey/out0OwnerPubkey/out1OwnerPubkey`;
+    circom declares `in0Owner/in1Owner/out0Owner/out1Owner`. 4 renames. All other keys match
+    (`in0Amount`, `in0Blinding`, `in0LeafIndex`, `in0Path`, `spendingKey`, `out0Amount`,
+    `out0Blinding`, `viewCtHashSenderWitness`, `viewCtHashRecipientWitness`, …).
+  - **withdraw:** wallet emits `noteOwnerPubkey/noteAuditorPubkey`; circom declares
+    `noteOwner/noteAuditor`. 2 renames. Others match (`noteAmount`, `noteBlinding`, `spendingKey`,
+    `leafIndex`, `merklePath`, `viewCtHashWitness`).
+
+  The circom circuits are frozen by Sub-project A, so the rename lives in the mapping layer (§3),
+  not in the circuits. **A name mismatch fails at `snarkjs.groth16.fullProve` (witness generation
+  rejects an unknown signal / missing input) — *before* any proof exists — so the §4 contract
+  roundtrip does NOT catch it.** The mapping must therefore be exhaustive and have its own direct
+  test (every required circom input present, no extras).
 - The contract takes verifying keys as **init parameters**: `new(…, vk_deposit, vk_transfer,
   vk_withdraw: Vec<u8>)` in EIP-196/197 bytes (`contract/src/lib.rs`). VKs are **not** hardcoded
   in WASM — so no contract code change is needed; B only needs the adapter that produces those
@@ -84,11 +98,18 @@ tests). `SubprocessProver` is **removed** (its only consumer was the arkworks bi
 
 ### 3. ProveRequest → circom input mapping — in `snarkjs-prover.ts`
 
-Per circuit, a hardcoded ordered public-signal-name list matching each circuit's
-`main { public [...] }` declaration (deposit 4, transfer 9, withdraw 8). Build the input as
-`{ …namedPublicInputs, …witness }`, converting every `0x…` hex string (and arrays thereof, e.g.
-`merklePath`/`in0Path`) to `bigint`. Witness keys pass through unchanged (they already match the
-circom signal names from Sub-project A).
+Per circuit, two hardcoded tables: (a) an ordered public-signal-name list matching each circuit's
+`main { public [...] }` declaration (deposit 4, transfer 9, withdraw 8), and (b) the
+**witness key-rename map** from the Key-facts section (deposit: none; transfer: 4 `…OwnerPubkey
+→ …Owner`; withdraw: `noteOwnerPubkey→noteOwner`, `noteAuditorPubkey→noteAuditor`). Build the
+circom input as `{ …namedPublicInputs, …renamedWitness }`, converting every `0x…` hex string
+(and arrays thereof, e.g. `merklePath`/`in0Path`) to `bigint`. **Endianness note:** `publicInputs`
+and `witness` hex are 32-byte *big-endian* (per `prover.ts`); the §1 adapter serializes contract
+VK/proof coordinates 32-byte *little-endian*. The input-mapper (hex→bigint, value-preserving) and
+the adapter (bigint→LE bytes) handle endianness in opposite directions — an easy place to introduce
+a swap bug, so keep the two concerns in separate, separately-tested functions. The mapping must
+produce **exactly** the circom input signal set (a missing/extra key fails `fullProve`), so it has
+a dedicated test independent of the contract roundtrip.
 
 ### 4. Fixtures + regen + drift guard, and the three test layers
 
@@ -134,6 +155,9 @@ DEV keys at deploy time.
 
 - Adapter unit tests (`groth16-adapter` round-trips a known snarkjs vk/proof to bytes and back where
   meaningful; structural assertions on lengths/offsets).
+- Input-mapper unit test: for each circuit, the ProveRequest→circom mapping produces **exactly** the
+  set of signal names the circuit declares (no missing, no extra), with the rename map applied —
+  catches the §3 name-mismatch class before it reaches `fullProve`.
 - `SnarkjsProver` test: produces a 256-byte proof for each circuit from the honest fixtures, and the
   bytes `verify_groth16`-on-contract (the §4 gate).
 - Drift-guard test: tampering the fixture `meta.json` r1cs hash makes the guard fail.
@@ -145,8 +169,11 @@ DEV keys at deploy time.
 - **G2 Fp2 component ordering** in the adapters → gated by the §4 contract roundtrip.
 - **Fixture staleness** → addressed by the r1cs-hash drift guard.
 - **snarkjs browser bundle size / wasm loading** → acknowledged; not optimized in B.
-- **Witness/public-input name or order mismatch** → the per-circuit public-name list is pinned to
-  each circuit's `main public [...]`; the §4 gate catches any mismatch (proof would not verify).
+- **Witness/public-input name or order mismatch** → handled by the explicit per-circuit rename map
+  + public-name list (§3), pinned to each circuit's signals. A name mismatch fails at `fullProve`
+  (witness generation), *not* at the §4 verify gate, so the mapping has its own exhaustive test
+  (exact required-signal set, no extras). A public-input *order* error (names right, order wrong)
+  would be caught by the §4 contract roundtrip (proof would not verify).
 
 ## Out of scope for B
 
