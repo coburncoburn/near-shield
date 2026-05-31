@@ -132,7 +132,7 @@ DEPLOY_VK_DIR="${DEPLOY_VK_DIR:-}"
 
 if [[ -n "$DEPLOY_VK_DIR" && -d "$DEPLOY_VK_DIR" ]]; then
   _vk_failures=0
-  for vk_file in "$DEPLOY_VK_DIR"/*.vk.bin "$DEPLOY_VK_DIR"/*/vk.bin; do
+  while IFS= read -r vk_file; do
     [[ -f "$vk_file" ]] || continue
     fingerprint="$(sha256sum "$vk_file" | awk '{print $1}')"
     for dev_fp in "${DEV_VK_FINGERPRINTS[@]}"; do
@@ -142,7 +142,7 @@ if [[ -n "$DEPLOY_VK_DIR" && -d "$DEPLOY_VK_DIR" ]]; then
         break
       fi
     done
-  done
+  done < <(find "$DEPLOY_VK_DIR" -type f \( -name 'vk.bin' -o -name '*.vk.bin' \))
   if [[ "$_vk_failures" -eq 0 ]]; then
     pass_step "deploy VKs do not match any DEV fingerprint"
   fi
