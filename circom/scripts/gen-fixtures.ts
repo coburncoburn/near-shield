@@ -35,6 +35,16 @@ const ROOT = path.resolve(__dirname, "..");
 const BUILD = path.join(ROOT, "build");
 const FIXTURES = path.join(ROOT, "fixtures");
 
+// --- Env overrides (all default to current dev-fixture behavior) ---
+// Resolve against process.cwd() so relative paths work; absolute paths pass through.
+const GENFIX_ZKEY_DIR: string = process.env.GENFIX_ZKEY_DIR
+  ? path.resolve(process.env.GENFIX_ZKEY_DIR)
+  : path.join(BUILD, "keys");
+const GENFIX_ZKEY_SUFFIX: string = process.env.GENFIX_ZKEY_SUFFIX ?? "_dev.zkey";
+const GENFIX_OUT_DIR: string = process.env.GENFIX_OUT_DIR
+  ? path.resolve(process.env.GENFIX_OUT_DIR)
+  : FIXTURES;
+
 type CircuitName = "deposit" | "transfer" | "withdraw";
 
 function inputForCircuit(c: CircuitName): Record<string, unknown> {
@@ -72,7 +82,7 @@ async function main() {
     const missing: string[] = [];
     const r1cs = path.join(BUILD, `${c}.r1cs`);
     const wasm = path.join(BUILD, `${c}_js`, `${c}.wasm`);
-    const zkey = path.join(BUILD, "keys", `${c}_dev.zkey`);
+    const zkey = path.join(GENFIX_ZKEY_DIR, `${c}${GENFIX_ZKEY_SUFFIX}`);
     if (!fs.existsSync(r1cs)) missing.push(r1cs);
     if (!fs.existsSync(wasm)) missing.push(wasm);
     if (!fs.existsSync(zkey)) missing.push(zkey);
@@ -87,9 +97,9 @@ async function main() {
     console.log(`\n=== ${c} ===`);
 
     const wasmPath = path.join(BUILD, `${c}_js`, `${c}.wasm`);
-    const zkeyPath = path.join(BUILD, "keys", `${c}_dev.zkey`);
+    const zkeyPath = path.join(GENFIX_ZKEY_DIR, `${c}${GENFIX_ZKEY_SUFFIX}`);
     const r1csPath = path.join(BUILD, `${c}.r1cs`);
-    const outDir = path.join(FIXTURES, c);
+    const outDir = path.join(GENFIX_OUT_DIR, c);
 
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -139,8 +149,8 @@ async function main() {
     meta[c] = { r1csSha256, nPublic: vk.nPublic };
   }
 
-  fs.writeFileSync(path.join(FIXTURES, "meta.json"), JSON.stringify(meta, null, 2));
-  console.log("\nWrote circom/fixtures/meta.json");
+  fs.writeFileSync(path.join(GENFIX_OUT_DIR, "meta.json"), JSON.stringify(meta, null, 2));
+  console.log(`\nWrote ${GENFIX_OUT_DIR}/meta.json`);
   console.log("Done.");
 }
 

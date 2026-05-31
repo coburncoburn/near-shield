@@ -13,8 +13,17 @@ use near_sdk::testing_env;
 use shielded_pool::groth16::{verify_groth16, Proof, VerifyingKey};
 use shielded_pool::poseidon::Field;
 
+fn fixture_base_dir() -> String {
+    // If CEREMONY_FIXTURE_DIR is set at runtime, load ceremony fixtures from there.
+    // Otherwise fall back to the committed dev fixtures in circom/fixtures/.
+    match std::env::var("CEREMONY_FIXTURE_DIR") {
+        Ok(dir) if !dir.is_empty() => dir,
+        _ => format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "/../circom/fixtures"),
+    }
+}
+
 fn load_fixture(circuit: &str, file: &str) -> Vec<u8> {
-    let base = concat!(env!("CARGO_MANIFEST_DIR"), "/../circom/fixtures");
+    let base = fixture_base_dir();
     let path = format!("{}/{}/{}", base, circuit, file);
     std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read {}: {}", path, e))
 }
