@@ -7,7 +7,7 @@
     {"id": 19, "subject": "C-Task 3: Beacon + finalize + vk.bin via sdk adapter + manifest", "status": "completed", "blockedBy": [18]},
     {"id": 20, "subject": "C-Task 4: verify-ceremony.sh standalone re-verification", "status": "completed", "blockedBy": [19]},
     {"id": 21, "subject": "C-Task 5: run-dev-ceremony.sh dev dry-run driver", "status": "completed", "blockedBy": [20]},
-    {"id": 22, "subject": "C-Task 6: On-contract validation of ceremony output", "status": "pending", "blockedBy": [21]},
+    {"id": 22, "subject": "C-Task 6: On-contract validation of ceremony output", "status": "completed", "blockedBy": [21]},
     {"id": 23, "subject": "C-Task 7: Fingerprint-guard wiring + RUNBOOK + README", "status": "pending", "blockedBy": [22]}
   ],
   "lastUpdated": "2026-05-31T00:00:00Z"
