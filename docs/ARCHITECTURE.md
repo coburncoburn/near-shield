@@ -3,11 +3,14 @@
 A study guide to how the privacy-preserving USDC pool works on NEAR, from a user
 building a transaction to on-chain verification and auditor disclosure.
 
-> **Scope.** This describes the *real* proving path: arkworks R1CS circuits in
-> `tools/prover`, proofs verified on-chain via NEAR's `alt_bn128` host functions
+> **Scope.** This describes the *real* proving path: Circom R1CS circuits in
+> `circom/circuits/`, proven in-process by `SnarkjsProver` (`sdk/packages/sdk/src/snarkjs-prover.ts`),
+> proofs verified on-chain via NEAR's `alt_bn128` host functions
 > (`contract/src/groth16.rs`). The Noir circuits under `circuits/` are a
 > **reference spec only** — they compile to Honk, which is incompatible with the
 > deployed Groth16 verifier. Don't read them as the production proving path.
+> The arkworks prover (`tools/prover`) was removed in Sub-project B; snarkjs is
+> the sole proving path.
 
 ---
 
@@ -20,7 +23,7 @@ the contract only ever sees public inputs and a 256-byte proof.
 flowchart TB
     subgraph client["Client side (secrets never leave)"]
         Wallet["Wallet / SDK<br/>(sdk/packages/sdk)<br/>keys, notes, tx builders"]
-        Prover["Groth16 Prover<br/>(tools/prover)<br/>JSON in → 256-byte proof out"]
+        Prover["Groth16 Prover<br/>(SnarkjsProver / snarkjs)<br/>JSON in → 256-byte proof out"]
     end
 
     Relayer["Relayer<br/>(sdk/packages/relayer)<br/>pays gas for withdrawals"]
@@ -93,7 +96,8 @@ boxes (`sdk/packages/core/src/encrypt.ts`).
 | `view_ct` | **auditor** X25519 key | `ViewDisclosure { action, sender/recipient pubkeys, amounts, memo, timestamp }` | Auditor selective disclosure |
 
 `view_ct` is bound into the proof's public inputs via
-`view_ct_hash = hashBytesToField(view_ct)`, so the disclosure can't be swapped
+`view_ct_hash = keccakToField(view_ct)` (NEAR's `keccak256` host fn, matched by the
+contract at all four verification sites), so the disclosure can't be swapped
 after proving.
 
 ### On-chain state (`contract/src/lib.rs`)
@@ -121,10 +125,10 @@ interface Prover {
 }
 ```
 
-The reference `SubprocessProver` shells out to the `shielded-prover` binary:
-JSON on stdin → 256 raw proof bytes on stdout (`A_g1‖B_g2‖C_g1`). The contract
-verifies those bytes against the circuit's verifying key using
-`env::alt_bn128_pairing_check`.
+The `SnarkjsProver` runs in-process via snarkjs: it calls `snarkjs.groth16.fullProve`
+with the circuit's `.wasm` witness generator and `.zkey` proving key, then serialises
+the proof to `A_g1‖B_g2‖C_g1` (256 bytes). The contract verifies those bytes against
+the circuit's verifying key using `env::alt_bn128_pairing_check`.
 
 **Public input vs. witness** — what the chain checks vs. what stays secret:
 
@@ -302,7 +306,7 @@ NEAR-deployable wasm features, so this regression can't slip through.
 | Groth16 verifier (alt_bn128) | `contract/src/groth16.rs`, `verifier.rs` |
 | Merkle / roots / nullifiers | `contract/src/{merkle,roots,nullifiers}.rs` |
 | FT (NEP-141) + payout recovery | `contract/src/ft.rs`, `withdraw.rs` |
-| Prover (arkworks R1CS) | `tools/prover/src/` |
+| Prover (snarkjs / Circom R1CS) | `circom/circuits/`, `sdk/packages/sdk/src/snarkjs-prover.ts` |
 | SDK wallet + tx builders | `sdk/packages/sdk/src/wallet.ts` |
 | Crypto primitives | `sdk/packages/core/src/` |
 | Relayer / Auditor | `sdk/packages/{relayer,auditor}/src/` |

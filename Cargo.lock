@@ -3916,28 +3916,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shielded-prover"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-groth16",
- "ark-r1cs-std",
- "ark-relations",
- "ark-serialize",
- "ark-snark",
- "ark-std",
- "hex",
- "light-poseidon",
- "near-sdk",
- "serde",
- "serde_json",
- "shielded-pool",
-]
-
-[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

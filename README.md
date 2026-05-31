@@ -12,7 +12,7 @@ The production-readiness gate now passes for sandbox deployments:
 ./scripts/check-production-readiness.sh
 ```
 
-The prover (`tools/prover`) proves real `deposit`, `transfer`, and `withdraw` Groth16 circuits using NEAR's `alt_bn128` host functions. Proof generation and the verify-via-contract host-function test pass in any environment.
+The prover (`SnarkjsProver`, in-process snarkjs) proves real `deposit`, `transfer`, and `withdraw` Groth16 circuits using NEAR's `alt_bn128` host functions. Proof generation and the verify-via-contract host-function test pass in any environment.
 
 > **Sandbox only — never use with real funds.** This prototype has not undergone circuit soundness review, a trusted-setup ceremony, or an external security audit. See `docs/superpowers/specs/2026-05-26-real-groth16-prover-e2e.md` for the path-to-production gates that remain before any mainnet deployment.
 
@@ -33,7 +33,7 @@ What **is** in place:
 
 ## Try the demo (sandbox only)
 
-`@shielded-near/demo` drives a full real-client flow against a local near-workspaces sandbox: it deploys the real `groth16-verifier` pool WASM + a vendored NEP-141 (`mock-ft`), creates Alice/Bob/relayer accounts, generates real Groth16 proofs via the `shielded-prover` binary, and submits them through the TS SDK.
+`@shielded-near/demo` drives a full real-client flow against a local near-workspaces sandbox: it deploys the real `groth16-verifier` pool WASM + a vendored NEP-141 (`mock-ft`), creates Alice/Bob/relayer accounts, generates real Groth16 proofs via the in-process `SnarkjsProver`, and submits them through the TS SDK.
 
 > **Current state:** the demo runs the full deposit → transfer → withdraw flow end-to-end with real Groth16 proofs against a near-workspaces sandbox, and asserts Bob's on-chain `ft_balance_of` increased by `60 - relayerFee`. The view_ct binding uses NEAR's `keccak256` host fn — see `docs/superpowers/specs/2026-05-28-view-ct-binding-keccak.md`.
 
@@ -46,12 +46,12 @@ cargo build -p mock-ft --target wasm32-unknown-unknown --release --no-default-fe
 wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering \
   target/wasm32-unknown-unknown/release/mock_ft.wasm \
   -o target/wasm32-unknown-unknown/release/mock_ft.opt.wasm
-cargo build -p shielded-prover --release
-cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys
+pnpm --filter @shielded-near/circom build  # compile circom circuits → build/*.r1cs + *_js/*.wasm
+bash circom/scripts/dev-setup.sh           # generate DEV proving/verifying keys (Sub-project C produces real keys)
 pnpm install
 ```
 
-`wasm-opt` is required (used directly here and by `check-production-readiness.sh`); install via your OS package manager or from the [binaryen releases](https://github.com/WebAssembly/binaryen/releases).
+The prover is in-process `SnarkjsProver` (no separate binary). `wasm-opt` is required (used by `check-production-readiness.sh`); install via your OS package manager or from the [binaryen releases](https://github.com/WebAssembly/binaryen/releases).
 
 `near-workspaces@4.0.0` ships a `neard` that is missing host functions required by `near-sdk 5.5`. The demo uses `near-workspaces` 0.22 (Rust crate), which bundles neard 2.11.0 and does not have this problem. If you see missing-host-function errors from the TS sandbox, set `SANDBOX_ARTIFACT_URL` to a neard 2.7.0 (or later) tarball before running `pnpm install`, or run `pnpm rebuild near-sandbox` with that env var set.
 
@@ -75,20 +75,20 @@ pnpm --filter @shielded-near/demo demo
 - `cargo test -p shielded-pool --lib` -- 66 passing tests + 2 ignored vector dumps
 - `cargo test -p shielded-pool --tests` -- 14 passing property/verifier + near-workspaces sandbox tests (incl. real-proof deposit/withdraw/transfer) + 1 ignored prover round-trip; sandbox tests skippable via `SKIP_NEAR_INTEGRATION=1`
 - `nargo test --workspace` (in `circuits/`) -- 22 tests
-- `pnpm -r test` -- core 39, sdk 22, auditor 7, relayer 6 = 74 tests
+- `pnpm -r test` -- core 55, sdk 53, auditor 7, relayer 7 = 122 tests
 - `npm test` (in `tools/superpowers-validate/`) -- 16 tests
 
-Total: **192 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips.** The two near-workspaces sandbox tests now deploy to and pass against the bundled neard sandbox; CI skips the sandbox portion via `SKIP_NEAR_INTEGRATION=1`. CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
+Total: **240 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips.** The two near-workspaces sandbox tests now deploy to and pass against the bundled neard sandbox; CI skips the sandbox portion via `SKIP_NEAR_INTEGRATION=1`. CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
 
 ## Production Gate
 
 The production-readiness script verifies:
 
-- the prover binary builds, circuit keys are generated via `setup`, and real 256-byte Groth16 proofs are produced for `deposit`, `transfer`, and `withdraw`
 - the production verifier feature compiles for `wasm32-unknown-unknown`
 - default WASM builds with mock verifier semantics are rejected
 - the optimised WASM artifact exists and fits under NEAR's deploy transaction limit
 - the optimised WASM uses only NEAR-deployable wasm features (no bulk-memory; lowered to MVP)
+- deploy VKs do not match the DEV key fingerprints baked into the script (guard fires once `DEPLOY_VK_DIR` is set in Sub-project C)
 
 **Remaining path-to-mainnet gates** (see spec for details):
 

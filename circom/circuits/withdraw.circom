@@ -4,7 +4,7 @@ include "lib/merkle.circom";
 include "lib/range.circom";
 include "circomlib/circuits/bitify.circom";
 
-// Single-note whole-amount withdraw (mirrors tools/prover/src/circuits/withdraw.rs).
+// Single-note whole-amount withdraw.
 // Public inputs (contract order, 8): merkleRoot, nullifier, recipient, amount,
 //   relayer, relayerFee, auditorPubkey, viewCtHash.
 // recipient & relayer are bound into the proof via squared signals so a relayer

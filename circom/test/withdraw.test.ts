@@ -1,6 +1,7 @@
 /**
- * Withdraw circuit equivalence tests.
- * Mirrors tools/prover/src/circuits/withdraw.rs tests:
+ * Withdraw circuit constraint tests.
+ * (Previously mirrored tools/prover/src/circuits/withdraw.rs; arkworks prover
+ * removed in Sub-project B — these circom circuits are now the source of truth.)
  *   1. honest withdraw → satisfiable
  *   2. wrong_spending_key → rejected
  *   3. forged_merkle_path → rejected

@@ -1,12 +1,10 @@
-This package is Sub-project A of the trusted-setup ceremony pivot: it houses
-the Circom circuit sources and the snarkjs-based build toolchain for the
-shielded-pool's deposit, transfer, and withdraw circuits. The arkworks prover
-in `tools/prover` and the TypeScript equivalence oracle in
-`@shielded-near/core` are retained as the reference implementation until
-Sub-project B (the integration swap: snarkjs prove path, VK→contract
-serialization adapter, dev-key fingerprint guard, prover/relayer/demo
-cutover) is complete. The constraint-equivalence proofs themselves are
-Sub-project A (this package).
+This package houses the Circom circuit sources and the snarkjs-based build
+toolchain for the shielded-pool's deposit, transfer, and withdraw circuits.
+Sub-project A established the Circom circuits and equivalence tests; Sub-project B
+completed the integration swap (snarkjs prove path, VK→contract serialization
+adapter, dev-key fingerprint guard, prover/relayer/demo cutover) and removed the
+arkworks prover (`tools/prover`) — these Circom circuits are now the source of
+truth for the proving path.
 
 **ALL keys produced by this package are DEV-only** — real, ceremony-grade
 proving and verification keys will be produced during Sub-project C (the

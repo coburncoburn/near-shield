@@ -1,6 +1,7 @@
 /**
- * Transfer circuit equivalence tests.
- * Mirrors tools/prover/src/circuits/transfer.rs tests:
+ * Transfer circuit constraint tests.
+ * (Previously mirrored tools/prover/src/circuits/transfer.rs; arkworks prover
+ * removed in Sub-project B — these circom circuits are now the source of truth.)
  *   1. honest transfer → satisfiable
  *   2. value_violation → rejected
  *   3. wraparound_mint → rejected

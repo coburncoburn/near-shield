@@ -102,31 +102,52 @@ else
   fi
 fi
 
-cargo build -q -p shielded-prover --release
-PROVER="$ROOT/target/release/shielded-prover"
-KEY_DIR="$ROOT/target/sp-keys"
-mkdir -p "$KEY_DIR"
-"$PROVER" setup --out-dir "$KEY_DIR"
-pass_step "prover built and circuit keys generated"
+# ---------------------------------------------------------------------------
+# DEV verifying-key fingerprint guard (Sub-project B)
+#
+# The VKs in circom/fixtures/<circuit>/vk.bin are generated from the snarkjs
+# DEV trusted-setup (dev-setup.sh using a hardcoded ptau seed). They are
+# FORBIDDEN from being used in any production deployment.
+#
+# Sub-project C will produce real ceremony VKs and wire them as the deploy
+# target; this guard ensures the DEV keys can NEVER silently slip through.
+#
+# Mechanism: sha256 each candidate deploy VK file and reject if it matches
+# any DEV fingerprint. The deploy VK location ($DEPLOY_VK_DIR) defaults to
+# an empty sentinel so this check is a no-op until Sub-project C populates it.
+# ---------------------------------------------------------------------------
 
-_prover_failures=0
-for c in deposit transfer withdraw; do
-  fixture="$ROOT/tools/prover/fixtures/${c}.json"
-  if [[ ! -f "$fixture" ]]; then
-    add_failure "missing prover fixture at $fixture"
-    _prover_failures=$((_prover_failures + 1))
-    continue
+# DEV key fingerprints (sha256, no filename) — Sub-project B registered values.
+# To regenerate: sha256sum circom/fixtures/{deposit,transfer,withdraw}/vk.bin
+DEV_VK_FINGERPRINTS=(
+  "8abe07dc84b83e87f469c02456546cea85ec2797a4006a13af5dd5009697ba4f"  # deposit  DEV vk
+  "1298e44b0ed0ed6227b1b6753d548359d865005afed77dabadb134c12571f171"  # transfer DEV vk
+  "d72df6c51b91bed8558977fca485c9b1392cccddca285939d17a52d68dd9d4cb"  # withdraw DEV vk
+)
+
+# Sub-project C: set DEPLOY_VK_DIR to the directory holding the ceremony VK
+# files (one vk.bin per circuit) before wiring a production deploy.
+# Until then this block is intentionally a no-op (the directory won't exist).
+DEPLOY_VK_DIR="${DEPLOY_VK_DIR:-}"
+
+if [[ -n "$DEPLOY_VK_DIR" && -d "$DEPLOY_VK_DIR" ]]; then
+  _vk_failures=0
+  for vk_file in "$DEPLOY_VK_DIR"/*.vk.bin "$DEPLOY_VK_DIR"/*/vk.bin; do
+    [[ -f "$vk_file" ]] || continue
+    fingerprint="$(sha256sum "$vk_file" | awk '{print $1}')"
+    for dev_fp in "${DEV_VK_FINGERPRINTS[@]}"; do
+      if [[ "$fingerprint" == "$dev_fp" ]]; then
+        add_failure "DEV verifying key detected in deploy VK location: $vk_file (sha256=$fingerprint). Run Sub-project C trusted-setup ceremony to produce real keys."
+        _vk_failures=$((_vk_failures + 1))
+        break
+      fi
+    done
+  done
+  if [[ "$_vk_failures" -eq 0 ]]; then
+    pass_step "deploy VKs do not match any DEV fingerprint"
   fi
-  n="$(PROVER_KEY_DIR="$KEY_DIR" "$PROVER" < "$fixture" | wc -c | tr -d ' ')"
-  if [ "$n" = "256" ]; then
-    pass_step "real ${c} proof (256 bytes)"
-  else
-    add_failure "prover did not emit a 256-byte proof for ${c} (got ${n} bytes)"
-    _prover_failures=$((_prover_failures + 1))
-  fi
-done
-if [[ "$_prover_failures" -eq 0 ]]; then
-  pass_step "prover generates real Groth16 proofs for all shielded circuits"
+else
+  pass_step "deploy VK fingerprint guard registered (DEPLOY_VK_DIR not set — Sub-project C pending)"
 fi
 
 finish_if_failures

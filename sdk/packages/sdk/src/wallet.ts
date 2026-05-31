@@ -32,8 +32,8 @@ export interface WalletConfig {
   /** The shielded pool contract account id. */
   poolAccountId: string;
   /**
-   * The Groth16 prover. Production deployments inject a `SubprocessProver`
-   * pointing at a real prover binary; tests use the default `StubProver`
+   * The Groth16 prover. Production deployments inject a `SnarkjsProver`
+   * loaded with real ceremony keys; tests use the default `StubProver`
    * which emits a one-byte placeholder (only accepted by mock-verifier
    * contract builds).
    */

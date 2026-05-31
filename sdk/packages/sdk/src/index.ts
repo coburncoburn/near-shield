@@ -8,7 +8,6 @@ export {
 } from "./wallet.js";
 export {
   StubProver,
-  SubprocessProver,
   type Prover,
   type ProveRequest,
 } from "./prover.js";
