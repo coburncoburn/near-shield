@@ -2,7 +2,7 @@
   "planPath": "docs/superpowers/plans/2026-05-30-snarkjs-integration-swap.md",
   "tasks": [
     {"id": 8, "subject": "Task 0: SDK snarkjs dep + adapter/prover scaffolding", "status": "completed"},
-    {"id": 9, "subject": "Task 1: VK + proof adapters (pure) + structural tests", "status": "pending", "blockedBy": [8]},
+    {"id": 9, "subject": "Task 1: VK + proof adapters (pure) + structural tests", "status": "completed", "blockedBy": [8]},
     {"id": 10, "subject": "Task 2: Fixtures + verify_groth16 contract GATE (pins G2 ordering)", "status": "pending", "blockedBy": [9]},
     {"id": 11, "subject": "Task 3: ProveRequest→circom input mapper + exact-signal test", "status": "pending", "blockedBy": [8]},
     {"id": 12, "subject": "Task 4: SnarkjsProver + node artifact provider", "status": "pending", "blockedBy": [9, 11]},
