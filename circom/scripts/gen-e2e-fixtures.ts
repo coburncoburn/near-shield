@@ -83,7 +83,7 @@ const RECIP_OWNER = new Field(12345678901234567890n);
 const RECIP_AUDITOR_FIELD = AUDITOR_FIELD;
 const RECIP_AUDITOR_PUBKEY_32 = AUDITOR_PUBKEY_32;
 
-// Fixed blinbdings (deterministic)
+// Fixed blindings (deterministic)
 const BLINDING_A = new Field(1001n);
 const BLINDING_B = new Field(1002n);
 const BLINDING_OUT0 = new Field(2001n);
@@ -130,14 +130,6 @@ function bd(n: bigint): string {
 /** Convert a Merkle path (Field[]) to decimal strings. */
 function pathDec(p: Field[]): string[] {
   return p.map((f) => f.value.toString());
-}
-
-/**
- * keccakToField but operating on the "0x"+hex encoding of a Uint8Array,
- * matching how the wallet encodes view_ct before hashing.
- */
-function encodeCiphertext(b: Uint8Array): string {
-  return "0x" + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -226,6 +218,11 @@ async function main(): Promise<void> {
   // Local MerkleTree — mirrors the contract's IncrementalMerkleTree
   const tree = new MerkleTree();
 
+  // Roots captured in memory as each step completes; used for scenario.json.
+  let rootAfterA: Field;
+  let rootAfterB: Field;
+  let rootAfterTransfer: Field;
+
   // ─── Commitment A ────────────────────────────────────────────────────────
   const noteA = {
     amount: AMT_A,
@@ -301,7 +298,7 @@ async function main(): Promise<void> {
     const idxA = tree.append(commitmentA);  // index 0
     console.log(`  commitmentA inserted at index ${idxA}`);
 
-    const rootAfterA = tree.root();
+    rootAfterA = tree.root();
     console.log(`  root after deposit A = ${rootAfterA.toHex()}`);
 
     writeFixture(
@@ -345,7 +342,7 @@ async function main(): Promise<void> {
     const idxB = tree.append(commitmentB);  // index 1
     console.log(`  commitmentB inserted at index ${idxB}`);
 
-    const rootAfterB = tree.root();
+    rootAfterB = tree.root();
     console.log(`  root after deposit B (= transfer root R2) = ${rootAfterB.toHex()}`);
 
     writeFixture(
@@ -433,8 +430,12 @@ async function main(): Promise<void> {
     console.log(`  commitmentOut0 inserted at index ${idx0}`);
     console.log(`  commitmentOut1 inserted at index ${idx1}`);
 
-    const R3 = tree.root();
-    console.log(`  R3 (withdraw root) = ${R3.toHex()}`);
+    // r3ForFixture (= rootAfterTransfer) is the same tree state as the outer R3
+    // used in the withdraw step — all are tree.root() after appending
+    // commitmentOut0 and commitmentOut1.
+    const r3ForFixture = tree.root();
+    rootAfterTransfer = r3ForFixture;
+    console.log(`  R3 (withdraw root) = ${r3ForFixture.toHex()}`);
 
     writeFixture(
       path.join(E2E_DIR, "transfer"),
@@ -449,7 +450,7 @@ async function main(): Promise<void> {
         view_cts: [viewCtStrTransferSender, viewCtStrTransferRecip],
         note_cts: [noteCtTransferRecip, noteCtTransferChange],
         // post-transfer root (for test assertions)
-        root_after: R3.toHex(),
+        root_after: r3ForFixture.toHex(),
       }
     );
   }
@@ -519,6 +520,8 @@ async function main(): Promise<void> {
   // ─────────────────────────────────────────────────────────────────────────
   // Write scenario summary for the Rust test to read
   // ─────────────────────────────────────────────────────────────────────────
+  // Build scenario summary from in-memory root variables (already computed above)
+  // rather than re-reading the just-written params.json files.
   const summary = {
     sender_owner: SENDER_OWNER.toHex(),
     auditor_field: AUDITOR_FIELD.toHex(),
@@ -526,19 +529,9 @@ async function main(): Promise<void> {
     commitmentB: commitmentB.toHex(),
     commitmentOut0: commitmentOut0.toHex(),
     commitmentOut1: commitmentOut1.toHex(),
-    root_after_deposit_a: ((): string => {
-      // Re-compute from params.json (already written above)
-      const p = JSON.parse(fs.readFileSync(path.join(E2E_DIR, "deposit_a", "params.json"), "utf-8"));
-      return p.root_after;
-    })(),
-    root_after_deposit_b: ((): string => {
-      const p = JSON.parse(fs.readFileSync(path.join(E2E_DIR, "deposit_b", "params.json"), "utf-8"));
-      return p.root_after;
-    })(),
-    root_after_transfer: ((): string => {
-      const p = JSON.parse(fs.readFileSync(path.join(E2E_DIR, "transfer", "params.json"), "utf-8"));
-      return p.root_after;
-    })(),
+    root_after_deposit_a: rootAfterA.toHex(),
+    root_after_deposit_b: rootAfterB.toHex(),
+    root_after_transfer: rootAfterTransfer.toHex(),
     withdraw_recipient: WITHDRAW_RECIPIENT_ID,
     withdraw_relayer: WITHDRAW_RELAYER_ID,
     relayer_fee: RELAYER_FEE.toString(),

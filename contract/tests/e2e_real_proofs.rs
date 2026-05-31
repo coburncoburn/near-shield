@@ -18,6 +18,12 @@
 //! match the current build artifacts (if the build directory is present).  Absent
 //! build artifacts → fixture-only assertion (proof.bin len + vk.bin len).
 //!
+//! The per-step root-parity assertions (`root_after_*` in params.json vs. the live
+//! sandbox merkle_root view) are the enforcement of the invariant that the
+//! fixture-generator's off-chain tree insertion order must exactly mirror the
+//! contract's IncrementalMerkleTree insertion order; if that invariant breaks the
+//! assertions here will catch it before a proof is submitted with the wrong root.
+//!
 //! Gated by `SKIP_NEAR_INTEGRATION` env var (proof bytes still validated).
 
 use near_sdk::json_types::U128;
@@ -117,42 +123,10 @@ fn assert_fixture_not_drifted() {
     }
 }
 
-/// Compute SHA-256 hex of a byte slice using the stdlib (no extra crate needed).
+/// Compute SHA-256 hex of a byte slice using the `sha2` crate.
 fn sha256_hex(data: &[u8]) -> String {
-    // Inline SHA-256 is heavy; use std process to invoke shasum -a 256 or
-    // the sha2 crate is not available. Instead use the ark-ff dep that's
-    // already in scope... but that's not sha256. Use a simple approach:
-    // write to a tmpfile and shell out, OR just use sha2 if available.
-    // Since ark-serialize is already a dep, and we need sha256, the simplest
-    // correct approach is to use the `ring` or `sha2` crate — but neither is
-    // in Cargo.toml. We'll shell out to shasum/sha256sum.
-    use std::io::Write;
-    let shasum_result = std::process::Command::new("shasum")
-        .args(["-a", "256", "-"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-
-    let mut child = match shasum_result {
-        Ok(c) => c,
-        Err(_) => {
-            // fallback: sha256sum (Linux)
-            std::process::Command::new("sha256sum")
-                .args(["--binary", "-"])
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .expect("neither shasum nor sha256sum found")
-        }
-    };
-
-    child.stdin.take().unwrap().write_all(data).unwrap();
-    let out = child.wait_with_output().unwrap();
-    let s = String::from_utf8_lossy(&out.stdout);
-    // shasum output: "<hex>  -\n" or "<hex> *-\n"
-    s.split_whitespace().next().unwrap_or("").to_string()
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(data))
 }
 
 fn skip() -> bool {
@@ -489,6 +463,9 @@ async fn snarkjs_connected_flow_deposit_transfer_withdraw() -> anyhow::Result<()
 /// into the tree with NO backing USDC transfer.
 #[tokio::test]
 async fn production_build_does_not_expose_direct_deposit() -> anyhow::Result<()> {
+    // Drift guard: catch fixture/circuit mismatch even if only this test runs.
+    assert_fixture_not_drifted();
+
     if skip() {
         eprintln!("SKIP_NEAR_INTEGRATION set; skipping sandbox");
         return Ok(());

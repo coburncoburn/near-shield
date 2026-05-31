@@ -44,3 +44,4 @@ ark-ff = { version = "0.4", default-features = false }
 ark-serialize = { version = "0.4", default-features = false }
 ark-std = { version = "0.4", default-features = false, features = ["std"] }
 ark-bn254 = { version = "0.4", default-features = false, features = ["curve"] }
+sha2 = { version = "0.10", features = ["std"] }
