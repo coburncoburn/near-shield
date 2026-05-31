@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# DEV-ONLY: generates a LOCAL Phase-1 ptau for dry-run / CI purposes only.
+# The real ceremony uses phase1-import.sh with the public Perpetual Powers of Tau and real participant contributions.
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 mkdir -p "$OUT_DIR"
 log "Phase1 dev: powersoftau new bn128 $POWER"

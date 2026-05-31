@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 PTAU_IN="${1:?path to Perpetual PoT .ptau (e.g. powersOfTau28_hez_final_15.ptau) — download URL in ceremony/RUNBOOK.md}"
+[[ -f "$PTAU_IN" ]] || { echo "ERROR: ptau file not found: $PTAU_IN" >&2; exit 1; }
 mkdir -p "$OUT_DIR"
 log "Phase1 import: verify $PTAU_IN"
 $SNARKJS powersoftau verify "$PTAU_IN"

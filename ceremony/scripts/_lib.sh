@@ -3,9 +3,10 @@ set -euo pipefail
 CEREMONY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CEREMONY_ROOT/.." && pwd)"
 OUT_DIR="${CEREMONY_OUT:-$CEREMONY_ROOT/out}"
-# NOTE: snarkjs is invoked via pnpm --filter; paths passed to it must be
-# relative to $REPO_ROOT/circom (that is snarkjs's cwd under --filter exec).
-SNARKJS="pnpm --filter @shielded-near/circom exec snarkjs"
+# NOTE: snarkjs runs with cwd=circom/ under `pnpm --filter exec`; ceremony
+# scripts therefore pass ABSOLUTE paths ($OUT_DIR / $REPO_ROOT-based) to
+# avoid any cwd dependence.
+SNARKJS="pnpm --filter @shielded-near/circom exec snarkjs"  # intentionally unquoted at call sites — multi-word command; word-splitting is deliberate
 CIRCUITS=(deposit transfer withdraw)
 POWER="${CEREMONY_POWER:-15}"
 
