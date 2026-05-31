@@ -23,7 +23,9 @@ import {
 } from "@shielded-near/core";
 import {
   encodeCiphertext,
-  SubprocessProver,
+  SnarkjsProver,
+  nodeArtifactProvider,
+  vkJsonToContractBytes,
   Wallet,
 } from "@shielded-near/sdk";
 import {
@@ -53,8 +55,7 @@ const MOCK_FT_WASM = resolve(
   REPO_ROOT,
   "target/wasm32-unknown-unknown/release/mock_ft.opt.wasm"
 );
-const PROVER_BIN = resolve(REPO_ROOT, "target/release/shielded-prover");
-const KEY_DIR = resolve(REPO_ROOT, "target/sp-keys");
+const CIRCOM_BUILD = resolve(REPO_ROOT, "circom/build");
 
 // Token: 6-decimal mock-USDC. Demo numbers (60/40) are raw base units.
 const TOTAL_SUPPLY = 1_000_000_000n; // 1000 USDC base units (plenty)
@@ -132,13 +133,7 @@ async function main(): Promise<void> {
   assertPrereqs(REPO_ROOT);
   logKv("pool wasm", POOL_OPT_WASM);
   logKv("ft wasm", MOCK_FT_WASM);
-  logKv("prover bin", PROVER_BIN);
-  logKv("key dir", KEY_DIR);
-
-  // The prover binary reads its key directory from PROVER_KEY_DIR (falls back
-  // to "keys/"). Set this BEFORE constructing SubprocessProver — node spawn
-  // inherits the parent env unless overridden.
-  process.env.PROVER_KEY_DIR = KEY_DIR;
+  logKv("circom build dir", CIRCOM_BUILD);
 
   const worker = await Worker.init();
   try {
@@ -165,12 +160,18 @@ async function main(): Promise<void> {
     logKv("token", tokenAccount.accountId);
     logKv("minter (initial supply holder)", minter.accountId);
 
-    // Pool deploy: read VKs and call `new`.
+    // Pool deploy: read snarkjs VK JSONs, convert to contract bytes, call `new`.
     const poolAccount = await root.createSubAccount("pool");
     await poolAccount.deploy(POOL_OPT_WASM);
-    const vkDeposit = Array.from(readFileSync(resolve(KEY_DIR, "deposit.vk")));
-    const vkTransfer = Array.from(readFileSync(resolve(KEY_DIR, "transfer.vk")));
-    const vkWithdraw = Array.from(readFileSync(resolve(KEY_DIR, "withdraw.vk")));
+    const vkDeposit = Array.from(
+      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/deposit_vk.json"), "utf8")))
+    );
+    const vkTransfer = Array.from(
+      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/transfer_vk.json"), "utf8")))
+    );
+    const vkWithdraw = Array.from(
+      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/withdraw_vk.json"), "utf8")))
+    );
     await poolAccount.call(poolAccount, "new", {
       owner: poolAccount.accountId,
       usdc_token: tokenAccount.accountId,
@@ -216,7 +217,7 @@ async function main(): Promise<void> {
     const auditorPubkey = new Uint8Array(32);
     for (let i = 0; i < 32; i++) auditorPubkey[i] = (0x42 + i) & 0xff;
 
-    const prover = new SubprocessProver(PROVER_BIN, REPO_ROOT);
+    const prover = new SnarkjsProver(nodeArtifactProvider(CIRCOM_BUILD));
 
     const alice = new Wallet({
       seed: aliceSeed,

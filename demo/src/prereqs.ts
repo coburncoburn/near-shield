@@ -35,27 +35,64 @@ export function getPrereqs(repoRoot: string): Prereq[] {
         "  -o target/wasm32-unknown-unknown/release/mock_ft.opt.wasm",
     },
     {
-      description: "shielded-prover binary",
-      relPath: "target/release/shielded-prover",
-      build: "cargo build -p shielded-prover --release",
+      description: "deposit circom R1CS",
+      relPath: "circom/build/deposit.r1cs",
+      build: "pnpm --filter @shielded-near/circom build",
     },
     {
-      description: "deposit verifying key",
-      relPath: "target/sp-keys/deposit.vk",
-      build:
-        "cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys",
+      description: "deposit circom WASM",
+      relPath: "circom/build/deposit_js/deposit.wasm",
+      build: "pnpm --filter @shielded-near/circom build",
     },
     {
-      description: "transfer verifying key",
-      relPath: "target/sp-keys/transfer.vk",
-      build:
-        "cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys",
+      description: "transfer circom R1CS",
+      relPath: "circom/build/transfer.r1cs",
+      build: "pnpm --filter @shielded-near/circom build",
     },
     {
-      description: "withdraw verifying key",
-      relPath: "target/sp-keys/withdraw.vk",
-      build:
-        "cargo run -p shielded-prover --release -- setup --out-dir target/sp-keys",
+      description: "transfer circom WASM",
+      relPath: "circom/build/transfer_js/transfer.wasm",
+      build: "pnpm --filter @shielded-near/circom build",
+    },
+    {
+      description: "withdraw circom R1CS",
+      relPath: "circom/build/withdraw.r1cs",
+      build: "pnpm --filter @shielded-near/circom build",
+    },
+    {
+      description: "withdraw circom WASM",
+      relPath: "circom/build/withdraw_js/withdraw.wasm",
+      build: "pnpm --filter @shielded-near/circom build",
+    },
+    {
+      description: "deposit dev proving key",
+      relPath: "circom/build/keys/deposit_dev.zkey",
+      build: "bash circom/scripts/dev-setup.sh",
+    },
+    {
+      description: "deposit verification key JSON",
+      relPath: "circom/build/keys/deposit_vk.json",
+      build: "bash circom/scripts/dev-setup.sh",
+    },
+    {
+      description: "transfer dev proving key",
+      relPath: "circom/build/keys/transfer_dev.zkey",
+      build: "bash circom/scripts/dev-setup.sh",
+    },
+    {
+      description: "transfer verification key JSON",
+      relPath: "circom/build/keys/transfer_vk.json",
+      build: "bash circom/scripts/dev-setup.sh",
+    },
+    {
+      description: "withdraw dev proving key",
+      relPath: "circom/build/keys/withdraw_dev.zkey",
+      build: "bash circom/scripts/dev-setup.sh",
+    },
+    {
+      description: "withdraw verification key JSON",
+      relPath: "circom/build/keys/withdraw_vk.json",
+      build: "bash circom/scripts/dev-setup.sh",
     },
   ];
 }
