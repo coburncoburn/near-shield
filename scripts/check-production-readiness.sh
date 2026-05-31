@@ -118,9 +118,9 @@ fi
 # ---------------------------------------------------------------------------
 
 # DEV key fingerprints (sha256, no filename) — Sub-project B registered values.
-# To regenerate: sha256sum circom/fixtures/{deposit,transfer,withdraw}/vk.bin
+# To regenerate: sha256sum <files>  (or: shasum -a 256 <files> on macOS)
 DEV_VK_FINGERPRINTS=(
-  "8abe07dc84b83e87f469c02456546cea85ec2797a4006a13af5dd5009697ba4f"  # deposit  DEV vk
+  "8abe07dc84b83e87f469c02456546cea85ec2797a4006a13af5dd5009697ba4f"  # deposit DEV vk
   "1298e44b0ed0ed6227b1b6753d548359d865005afed77dabadb134c12571f171"  # transfer DEV vk
   "d72df6c51b91bed8558977fca485c9b1392cccddca285939d17a52d68dd9d4cb"  # withdraw DEV vk
 )
@@ -130,10 +130,13 @@ DEV_VK_FINGERPRINTS=(
 # Until then this block is intentionally a no-op (the directory won't exist).
 DEPLOY_VK_DIR="${DEPLOY_VK_DIR:-}"
 
-if [[ -n "$DEPLOY_VK_DIR" && -d "$DEPLOY_VK_DIR" ]]; then
+if [[ -z "$DEPLOY_VK_DIR" ]]; then
+  pass_step "deploy VK fingerprint guard registered (DEPLOY_VK_DIR not set — Sub-project C pending)"
+elif [[ ! -d "$DEPLOY_VK_DIR" ]]; then
+  add_failure "DEPLOY_VK_DIR set but not a directory: $DEPLOY_VK_DIR"
+else
   _vk_failures=0
   while IFS= read -r vk_file; do
-    [[ -f "$vk_file" ]] || continue
     fingerprint="$(sha256sum "$vk_file" | awk '{print $1}')"
     for dev_fp in "${DEV_VK_FINGERPRINTS[@]}"; do
       if [[ "$fingerprint" == "$dev_fp" ]]; then
@@ -146,8 +149,6 @@ if [[ -n "$DEPLOY_VK_DIR" && -d "$DEPLOY_VK_DIR" ]]; then
   if [[ "$_vk_failures" -eq 0 ]]; then
     pass_step "deploy VKs do not match any DEV fingerprint"
   fi
-else
-  pass_step "deploy VK fingerprint guard registered (DEPLOY_VK_DIR not set — Sub-project C pending)"
 fi
 
 finish_if_failures
