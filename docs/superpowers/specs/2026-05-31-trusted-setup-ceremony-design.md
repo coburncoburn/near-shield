@@ -64,7 +64,13 @@ ceremony/
 
 snarkjs *is* the contributor tool (`zkey contribute`); the scripts wrap/orchestrate it, add the
 attestation + transcript, and verify. Each script stays small and single-purpose. `@shielded-near/sdk`'s
-`vkJsonToContractBytes` (from B) produces the `vk.bin` adapter bytes in `finalize.sh`.
+`vkJsonToContractBytes` (from B) produces the `vk.bin` adapter bytes in `finalize.sh` — `finalize.sh`
+calls that single adapter (no second, divergent VK-export code path).
+
+**Implementation note (from spec review):** `circom/scripts/gen-fixtures.ts` currently hardcodes the
+DEV zkey path (`build/keys/<c>_dev.zkey`). Reusing it to validate ceremony output (§4.2) requires
+parameterizing the zkey/output paths (e.g. via env vars or args) so it can point at the ceremony
+zkeys + write a ceremony fixture dir, without disturbing the existing DEV-fixture behavior.
 
 ## The ceremony flow & transcript
 
