@@ -8,7 +8,8 @@ import type { SnarkjsProof, SnarkjsVk } from "./groth16-adapter.js";
 
 const PROOF: SnarkjsProof = {
   pi_a: ["1", "2", "1"],                        // G1 affine
-  pi_b: [["3", "4"], ["5", "6"], ["1", "0"]],   // G2 affine  (z.c0="1" → not infinity)
+  // G2 affine — NOT infinity requires NOT(z.c0=="0" && z.c1=="0"); here z=["1","0"]
+  pi_b: [["3", "4"], ["5", "6"], ["1", "0"]],
   pi_c: ["5", "7", "1"],                        // G1 affine, x="5" for coord check
 };
 
@@ -38,6 +39,13 @@ const PROOF_INF_A: SnarkjsProof = {
 const PROOF_INF_B: SnarkjsProof = {
   pi_a: PROOF.pi_a,
   pi_b: [["0", "0"], ["0", "0"], ["0", "0"]],
+  pi_c: PROOF.pi_c,
+};
+
+// G2 point where z.c0="0" but z.c1="1" — NOT infinity (AND logic requires both zero)
+const PROOF_G2_NON_INF_C1: SnarkjsProof = {
+  pi_a: PROOF.pi_a,
+  pi_b: [["256", "0"], ["0", "0"], ["0", "1"]],
   pi_c: PROOF.pi_c,
 };
 
@@ -71,6 +79,48 @@ describe("snarkjsProofToBytes", () => {
     // pi_a.x = "1" at offset 0
     expect(bytes[0]).toBe(1);
     for (let i = 1; i < 32; i++) expect(bytes[i]).toBe(0);
+  });
+
+  it("coordinate '256' serialises LE: byte 0 = 0, byte 1 = 1 (multi-byte LE check)", () => {
+    // pi_b.x.c0 = "256" at offset 64 (first 32 bytes of B_g2)
+    const bytes = snarkjsProofToBytes(PROOF_G2_NON_INF_C1);
+    expect(bytes[64]).toBe(0);   // low byte of 256
+    expect(bytes[65]).toBe(1);   // high byte of 256
+    for (let i = 66; i < 96; i++) expect(bytes[i]).toBe(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// decToLe range-guard (reached via snarkjsProofToBytes / vkJsonToContractBytes)
+// ──────────────────────────────────────────────────────────────────────────────
+describe("decToLe range guard", () => {
+  it("throws RangeError for a negative coordinate '-1'", () => {
+    const bad: SnarkjsProof = { ...PROOF, pi_a: ["-1", "2", "1"] };
+    expect(() => snarkjsProofToBytes(bad)).toThrow(RangeError);
+  });
+
+  it("throws RangeError for a coordinate equal to 2^256", () => {
+    const tooBig = (2n ** 256n).toString();
+    const bad: SnarkjsProof = { ...PROOF, pi_a: [tooBig, "2", "1"] };
+    expect(() => snarkjsProofToBytes(bad)).toThrow(RangeError);
+  });
+
+  it("throws RangeError via vkJsonToContractBytes for a negative IC coordinate", () => {
+    const bad: SnarkjsVk = { ...VK, IC: [["-1", "2", "1"], ["3", "4", "1"]] };
+    expect(() => vkJsonToContractBytes(bad)).toThrow(RangeError);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// G2 non-infinity (z.c0="0", z.c1="1" → point is NOT at infinity)
+// ──────────────────────────────────────────────────────────────────────────────
+describe("G2 non-infinity when c0=0 and c1 nonzero", () => {
+  it("G2 with z=[\"0\",\"1\"] is NOT treated as infinity: B bytes at offset 64 are non-zero", () => {
+    // x.c0 = "256" → encodes as [0, 1, 0, ...] so the 32-byte window is non-zero
+    const bytes = snarkjsProofToBytes(PROOF_G2_NON_INF_C1);
+    const bWindow = bytes.slice(64, 192);
+    const allZero = bWindow.every((b) => b === 0);
+    expect(allZero).toBe(false);
   });
 });
 

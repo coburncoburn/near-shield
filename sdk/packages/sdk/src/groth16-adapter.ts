@@ -50,7 +50,10 @@ const FR = 32; // field element byte length
 
 /** Decode a decimal-string field element into 32 bytes, little-endian. */
 function decToLe(dec: string): Uint8Array {
-  let v = BigInt(dec);
+  const v0 = BigInt(dec);
+  if (v0 < 0n || v0 >= (1n << 256n))
+    throw new RangeError(`decToLe: value out of 32-byte range: ${dec}`);
+  let v = v0;
   const out = new Uint8Array(FR);
   for (let i = 0; i < FR; i++) {
     out[i] = Number(v & 0xffn);
