@@ -122,22 +122,24 @@ Produces `ceremony/out/<c>_0000.zkey`.
 
 ### 2.2 Contributors (sequential, one at a time)
 
-For each contributor **N** (starting at N=0, so the first contributor is N=1):
+The coordinator's initial zkey from §2.1 is `<c>_0000.zkey`. Contributor **k**
+(k = 1, 2, 3, …) reads `<c>_000(k-1).zkey` and writes `<c>_000k.zkey`, so the
+chain is `_0000` → `_0001` → `_0002` → … For each contributor in turn:
 
-1. **Coordinator sends** `ceremony/out/<c>_000N.zkey` to the contributor
-   (secure channel).
+1. **Coordinator sends** the latest zkey `ceremony/out/<c>_000(k-1).zkey` to
+   contributor *k* (secure channel).
 2. **Contributor runs on their machine** (from the repo root):
 
    ```sh
    bash ceremony/scripts/contribute.sh \
      <c> \
-     /path/to/<c>_000N.zkey \
-     /path/to/<c>_000(N+1).zkey \
+     /path/to/<c>_000(k-1).zkey \
+     /path/to/<c>_000k.zkey \
      "Contributor Name"
    ```
 
-   For example, if you are **contributor 3**, your input is `<c>_0003.zkey`
-   and your output is `<c>_0004.zkey`.
+   For example, **contributor 3** reads `<c>_0002.zkey` and writes
+   `<c>_0003.zkey` (contributor 1 reads the coordinator's `<c>_0000.zkey`).
 
    When prompted by snarkjs, the contributor types **fresh, high-entropy
    randomness** (keyboard mashing, a dice roll, etc.).  **Do NOT pass entropy
