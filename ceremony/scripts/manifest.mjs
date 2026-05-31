@@ -6,6 +6,7 @@
 //   node manifest.mjs add-contribution <circuit> <name> <zkeySha256>
 //   node manifest.mjs set-beacon <circuit> <beaconHex> <source>
 //   node manifest.mjs finalize-circuit <circuit> <zkeyPath> <vkJsonPath> <vkBinPath>
+//   node manifest.mjs check-circuit <circuit> <vkBinPath>
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -126,6 +127,29 @@ function cmdFinalizeCircuit(args) {
   writeManifest(manifest);
 }
 
+function cmdCheckCircuit(args) {
+  const [circuit, vkBinPath] = args;
+  if (!circuit || !vkBinPath) {
+    throw new Error('Usage: check-circuit <circuit> <vkBinPath>');
+  }
+  const manifest = readManifest();
+  const entry = manifest.circuits?.[circuit];
+  if (!entry) {
+    throw new Error(`circuit '${circuit}' not found in manifest`);
+  }
+  const expected = entry.final?.vkBinSha256;
+  if (!expected) {
+    throw new Error(`no final.vkBinSha256 recorded for circuit '${circuit}' — run finalize-circuit first`);
+  }
+  const actual = sha256Hex(vkBinPath);
+  if (actual !== expected) {
+    throw new Error(
+      `vk.bin sha256 MISMATCH for '${circuit}':\n  expected: ${expected}\n  actual:   ${actual}`
+    );
+  }
+  console.log(`check-circuit OK: ${circuit} vk.bin sha256 matches manifest (${actual})`);
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
@@ -137,6 +161,7 @@ const commands = {
   'add-contribution': cmdAddContribution,
   'set-beacon': cmdSetBeacon,
   'finalize-circuit': cmdFinalizeCircuit,
+  'check-circuit': cmdCheckCircuit,
 };
 
 if (!subcommand || !commands[subcommand]) {
