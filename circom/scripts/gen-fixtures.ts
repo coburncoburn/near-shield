@@ -65,6 +65,24 @@ async function main() {
   const circuits: CircuitName[] = ["deposit", "transfer", "withdraw"];
   const meta: Record<string, { r1csSha256: string; nPublic: number }> = {};
 
+  // Upfront prerequisite check: all three circuits must be fully compiled before
+  // we attempt to prove. Fail fast with a clear message rather than a cryptic
+  // snarkjs error mid-loop.
+  for (const c of circuits) {
+    const missing: string[] = [];
+    const r1cs = path.join(BUILD, `${c}.r1cs`);
+    const wasm = path.join(BUILD, `${c}_js`, `${c}.wasm`);
+    const zkey = path.join(BUILD, "keys", `${c}_dev.zkey`);
+    if (!fs.existsSync(r1cs)) missing.push(r1cs);
+    if (!fs.existsSync(wasm)) missing.push(wasm);
+    if (!fs.existsSync(zkey)) missing.push(zkey);
+    if (missing.length > 0) {
+      throw new Error(
+        `missing circuit build artifacts — run circom/scripts/regen-fixtures.sh\n  missing: ${missing.join(", ")}`
+      );
+    }
+  }
+
   for (const c of circuits) {
     console.log(`\n=== ${c} ===`);
 
@@ -80,7 +98,7 @@ async function main() {
 
     // Prove
     console.log("  fullProve ...");
-    const { proof, publicSignals } = await (snarkjs.groth16 as any).fullProve(
+    const { proof, publicSignals } = await (snarkjs.groth16 as any /* snarkjs ships no first-party types */).fullProve(
       input,
       wasmPath,
       zkeyPath
@@ -88,7 +106,7 @@ async function main() {
 
     // Export VK
     console.log("  exportVerificationKey ...");
-    const vk = await (snarkjs.zKey as any).exportVerificationKey(zkeyPath);
+    const vk = await (snarkjs.zKey as any /* snarkjs ships no first-party types */).exportVerificationKey(zkeyPath);
 
     // Encode to contract bytes
     const vkBin = vkJsonToContractBytes(vk);

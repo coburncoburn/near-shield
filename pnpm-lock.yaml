@@ -8,6 +8,9 @@ importers:
 
   circom:
     dependencies:
+      '@shielded-near/sdk':
+        specifier: workspace:*
+        version: link:../sdk/packages/sdk
       circomlib:
         specifier: 2.0.5
         version: 2.0.5
@@ -21,9 +24,6 @@ importers:
       '@shielded-near/core':
         specifier: workspace:*
         version: link:../sdk/packages/core
-      '@shielded-near/sdk':
-        specifier: workspace:*
-        version: link:../sdk/packages/sdk
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
