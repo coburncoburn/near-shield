@@ -217,6 +217,7 @@ describe("proveRequestToCircomInput — value conversion", () => {
     expect(out.amount).toBe("1");
     expect(out.ownerPubkey).toBe("4");
     expect(out.blinding).toBe("5");
+    expect(out.viewCtHashWitness).toBe("6");
   });
 
   it("converts array witness values (merkle path) to decimal string arrays", () => {
@@ -256,5 +257,35 @@ describe("proveRequestToCircomInput — error cases", () => {
       witness: {},
     };
     expect(() => proveRequestToCircomInput(req)).toThrow("expected 4 public inputs, got 2");
+  });
+
+  it("throws when a witness value is an empty string", () => {
+    const req: ProveRequest = {
+      circuit: "deposit",
+      publicInputs: [F, F, F, F],
+      witness: {
+        ownerPubkey: "",
+        blinding: F,
+        viewCtHashWitness: F,
+      },
+    };
+    expect(() => proveRequestToCircomInput(req)).toThrow(
+      "proveRequestToCircomInput: expected non-empty hex string"
+    );
+  });
+
+  it("throws when a public input is not a string", () => {
+    const req = {
+      circuit: "deposit",
+      publicInputs: [42, F, F, F], // number instead of hex string
+      witness: {
+        ownerPubkey: F,
+        blinding: F,
+        viewCtHashWitness: F,
+      },
+    } as unknown as ProveRequest;
+    expect(() => proveRequestToCircomInput(req)).toThrow(
+      "proveRequestToCircomInput: expected non-empty hex string"
+    );
   });
 });

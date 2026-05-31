@@ -2,7 +2,7 @@
  * In-process Groth16 prover backed by snarkjs.
  *
  * `SnarkjsProver` is a stub for now — the witness-building and proof-generation
- * logic is introduced in Tasks 2–4 of Sub-project B.
+ * logic is introduced in Task 4 of Sub-project B.
  */
 
 import type { Prover, ProveRequest } from "./prover.js";
@@ -59,11 +59,18 @@ const RENAME: Record<CircuitName, Record<string, string>> = {
   },
 };
 
+// Convert a single hex string to a decimal string; throws on empty or non-string input.
+const toField = (x: unknown): string => {
+  if (typeof x !== "string" || x === "")
+    throw new Error(
+      `proveRequestToCircomInput: expected non-empty hex string, got ${JSON.stringify(x)}`
+    );
+  return BigInt(x).toString();
+};
+
 // Convert a hex string (or array of hex strings) to decimal string(s) as snarkjs expects.
 const conv = (v: unknown): string | string[] =>
-  Array.isArray(v)
-    ? (v as string[]).map((x) => BigInt(x as string).toString())
-    : BigInt(v as string).toString();
+  Array.isArray(v) ? v.map(toField) : toField(v);
 
 /**
  * Map a generic `ProveRequest` to the flat input object expected by the
@@ -73,6 +80,13 @@ const conv = (v: unknown): string | string[] =>
  * are renamed via the per-circuit RENAME map (e.g. `in0OwnerPubkey` →
  * `in0Owner`). All values are converted from 0x-prefixed hex to decimal
  * strings as snarkjs requires.
+ *
+ * Pass-through policy: witness keys that are not present in RENAME are
+ * forwarded to the circom input unchanged (after value conversion). snarkjs's
+ * `groth16.fullProve` will reject any signal name that does not exist in the
+ * compiled circuit at witness-generation time, so unknown keys surface as
+ * runtime errors there. The exact-signal-set tests in snarkjs-prover.test.ts
+ * are the compile-time guard for all known circuits.
  */
 export function proveRequestToCircomInput(
   req: ProveRequest
@@ -103,7 +117,7 @@ export function proveRequestToCircomInput(
 export class SnarkjsProver implements Prover {
   constructor(private readonly artifacts: ArtifactProvider) {}
 
-  /** @throws {Error} Not yet implemented — see Tasks 3–4. */
+  /** @throws {Error} Not yet implemented — see Task 4. */
   async prove(_req: ProveRequest): Promise<Uint8Array> {
     throw new Error("not implemented");
   }
