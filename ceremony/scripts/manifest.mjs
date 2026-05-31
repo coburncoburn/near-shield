@@ -3,7 +3,7 @@
 // Maintains ceremony/out/manifest.json (or $CEREMONY_OUT/manifest.json).
 // Usage:
 //   node manifest.mjs init <ptauPath>
-//   node manifest.mjs add-contribution <circuit> <name> <contributionHash>
+//   node manifest.mjs add-contribution <circuit> <name> <zkeySha256>
 //   node manifest.mjs set-beacon <circuit> <beaconHex> <source>
 //   node manifest.mjs finalize-circuit <circuit> <zkeyPath> <vkJsonPath> <vkBinPath>
 
@@ -71,9 +71,9 @@ function cmdInit(args) {
 }
 
 function cmdAddContribution(args) {
-  const [circuit, name, contributionHash] = args;
-  if (!circuit || !name || !contributionHash) {
-    throw new Error('Usage: add-contribution <circuit> <name> <contributionHash>');
+  const [circuit, name, zkeySha256] = args;
+  if (!circuit || !name || !zkeySha256) {
+    throw new Error('Usage: add-contribution <circuit> <name> <zkeySha256>');
   }
   const manifest = readManifest();
   if (!manifest.circuits[circuit]) {
@@ -85,10 +85,10 @@ function cmdAddContribution(args) {
   // M4: Guard against duplicate (circuit, name)
   const existing = manifest.circuits[circuit].contributions.find(c => c.name === name);
   if (existing) {
-    throw new Error(`contribution '${name}' already recorded for circuit '${circuit}' — remove it from the manifest to re-record`);
+    throw new Error(`contribution name '${name}' already recorded for circuit '${circuit}' — remove it from the manifest to re-record`);
   }
   // M5: Include a timestamp (standard ceremony-transcript practice)
-  manifest.circuits[circuit].contributions.push({ name, contributionHash, timestamp: new Date().toISOString() });
+  manifest.circuits[circuit].contributions.push({ name, zkeySha256, timestamp: new Date().toISOString() });
   writeManifest(manifest);
 }
 

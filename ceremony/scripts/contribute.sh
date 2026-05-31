@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 C="${1:?circuit}"
+require_circuit "$C"
 # Resolve IN/OUT to absolute paths — snarkjs runs under pnpm exec with cwd=circom/
 # so relative paths passed by the caller would be wrong inside that subprocess.
 _abs() {
@@ -17,10 +18,11 @@ ENTROPY="${5:-}"
 mkdir -p "$(dirname "$OUT")"
 log "Phase2 contribute: $C by '$NAME'"
 if [[ -n "$ENTROPY" ]]; then
-  echo "$ENTROPY" | $SNARKJS zkey contribute "$IN" "$OUT" --name="$NAME" -v
+  printf '%s\n' "$ENTROPY" | $SNARKJS zkey contribute "$IN" "$OUT" --name="$NAME" -v
 else
   # interactive: snarkjs prompts the real contributor for entropy
   $SNARKJS zkey contribute "$IN" "$OUT" --name="$NAME" -v
 fi
-# Attestation: record sha256 of the produced zkey as the contribution reference.
+# Attestation: record sha256 of the output zkey FILE as an integrity reference
+# (not the MPC contribution hash — obtain that via `snarkjs zkey verify`).
 node "$CEREMONY_ROOT/scripts/manifest.mjs" add-contribution "$C" "$NAME" "$(sha256_hex "$OUT")"

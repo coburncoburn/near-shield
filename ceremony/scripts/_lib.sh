@@ -12,6 +12,12 @@ POWER="${CEREMONY_POWER:-15}"
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
+require_circuit() {
+  local c="$1"
+  for x in "${CIRCUITS[@]}"; do [[ "$x" == "$c" ]] && return 0; done
+  echo "ERROR: unknown circuit '$c'; expected one of: ${CIRCUITS[*]}" >&2; exit 1
+}
+
 sha256_hex() {  # cross-platform (Linux sha256sum / macOS shasum)
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}';
   else shasum -a 256 "$1" | awk '{print $1}'; fi
