@@ -3,7 +3,7 @@
   "tasks": [
     {"id": 8, "subject": "Task 0: SDK snarkjs dep + adapter/prover scaffolding", "status": "completed"},
     {"id": 9, "subject": "Task 1: VK + proof adapters (pure) + structural tests", "status": "completed", "blockedBy": [8]},
-    {"id": 10, "subject": "Task 2: Fixtures + verify_groth16 contract GATE (pins G2 ordering)", "status": "pending", "blockedBy": [9]},
+    {"id": 10, "subject": "Task 2: Fixtures + verify_groth16 contract GATE (pins G2 ordering)", "status": "completed", "blockedBy": [9]},
     {"id": 11, "subject": "Task 3: ProveRequest→circom input mapper + exact-signal test", "status": "pending", "blockedBy": [8]},
     {"id": 12, "subject": "Task 4: SnarkjsProver + node artifact provider", "status": "pending", "blockedBy": [9, 11]},
     {"id": 13, "subject": "Task 5: Convert Rust e2e to fixtures + drift guard; delete CLI roundtrip", "status": "pending", "blockedBy": [10]},
