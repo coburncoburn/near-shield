@@ -5,6 +5,7 @@
 # The real ceremony uses these same scripts with phase1-import.sh (Perpetual PoT)
 # + real participants + a real announced beacon — see ceremony/RUNBOOK.md.
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
+# Override the output dir with CEREMONY_OUT=<path>.
 export BEACON_SOURCE="DEV-PLACEHOLDER-not-production"
 # 64-hex-char placeholder beacon — loudly non-random, DEV-only.
 DEV_BEACON="00000000000000000000000000000000000000000000000000000000000000aa"
@@ -13,7 +14,6 @@ rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"
 bash "$CEREMONY_ROOT/scripts/phase1-dev.sh"
 node "$CEREMONY_ROOT/scripts/manifest.mjs" init "$OUT_DIR/pot_final.ptau"
 for C in "${CIRCUITS[@]}"; do
-  mkdir -p "$OUT_DIR/$C"
   bash "$CEREMONY_ROOT/scripts/init-phase2.sh" "$C"
   prev="$OUT_DIR/${C}_0000.zkey"
   for i in 1 2 3; do
@@ -25,6 +25,8 @@ for C in "${CIRCUITS[@]}"; do
   bash "$CEREMONY_ROOT/scripts/finalize.sh" "$C" "$OUT_DIR/${C}_final.zkey"
 done
 bash "$CEREMONY_ROOT/scripts/verify-ceremony.sh"
+# drop intermediate contribution zkeys — verify-ceremony only needs *_final.zkey
+rm -f "$OUT_DIR"/*_000?.zkey
 echo ""
 echo "DEV DRY-RUN CEREMONY COMPLETE — NON-PRODUCTION keys in $OUT_DIR"
 echo "(real ceremony: see ceremony/RUNBOOK.md)"
