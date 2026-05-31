@@ -7,7 +7,7 @@
     {"id": 11, "subject": "Task 3: ProveRequest→circom input mapper + exact-signal test", "status": "completed", "blockedBy": [8]},
     {"id": 12, "subject": "Task 4: SnarkjsProver + node artifact provider", "status": "completed", "blockedBy": [9, 11]},
     {"id": 13, "subject": "Task 5: Convert Rust e2e to fixtures + drift guard; delete CLI roundtrip", "status": "completed", "blockedBy": [10]},
-    {"id": 14, "subject": "Task 6: Demo cutover to snarkjs", "status": "pending", "blockedBy": [12, 10]},
+    {"id": 14, "subject": "Task 6: Demo cutover to snarkjs", "status": "completed", "blockedBy": [12, 10]},
     {"id": 15, "subject": "Task 7: Delete arkworks prover + SubprocessProver; Cargo/README; fingerprint guard", "status": "pending", "blockedBy": [10, 13, 14]}
   ],
   "lastUpdated": "2026-05-30T00:00:00Z"
