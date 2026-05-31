@@ -13,8 +13,11 @@ interface Prereq {
   build: string;
 }
 
+const CIRCUITS = ["deposit", "transfer", "withdraw"] as const;
+type Circuit = typeof CIRCUITS[number];
+
 export function getPrereqs(repoRoot: string): Prereq[] {
-  return [
+  const prereqs: Prereq[] = [
     {
       description: "shielded-pool deployable WASM (groth16-verifier, wasm-opt'd)",
       relPath: "target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm",
@@ -34,67 +37,34 @@ export function getPrereqs(repoRoot: string): Prereq[] {
         "  target/wasm32-unknown-unknown/release/mock_ft.wasm \\\n" +
         "  -o target/wasm32-unknown-unknown/release/mock_ft.opt.wasm",
     },
-    {
-      description: "deposit circom R1CS",
-      relPath: "circom/build/deposit.r1cs",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "deposit circom WASM",
-      relPath: "circom/build/deposit_js/deposit.wasm",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "transfer circom R1CS",
-      relPath: "circom/build/transfer.r1cs",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "transfer circom WASM",
-      relPath: "circom/build/transfer_js/transfer.wasm",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "withdraw circom R1CS",
-      relPath: "circom/build/withdraw.r1cs",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "withdraw circom WASM",
-      relPath: "circom/build/withdraw_js/withdraw.wasm",
-      build: "pnpm --filter @shielded-near/circom build",
-    },
-    {
-      description: "deposit dev proving key",
-      relPath: "circom/build/keys/deposit_dev.zkey",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
-    {
-      description: "deposit verification key JSON",
-      relPath: "circom/build/keys/deposit_vk.json",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
-    {
-      description: "transfer dev proving key",
-      relPath: "circom/build/keys/transfer_dev.zkey",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
-    {
-      description: "transfer verification key JSON",
-      relPath: "circom/build/keys/transfer_vk.json",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
-    {
-      description: "withdraw dev proving key",
-      relPath: "circom/build/keys/withdraw_dev.zkey",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
-    {
-      description: "withdraw verification key JSON",
-      relPath: "circom/build/keys/withdraw_vk.json",
-      build: "bash circom/scripts/dev-setup.sh",
-    },
   ];
+
+  for (const c of CIRCUITS) {
+    prereqs.push(
+      {
+        description: `${c} circom R1CS`,
+        relPath: `circom/build/${c}.r1cs`,
+        build: "pnpm --filter @shielded-near/circom build",
+      },
+      {
+        description: `${c} circom WASM`,
+        relPath: `circom/build/${c}_js/${c}.wasm`,
+        build: "pnpm --filter @shielded-near/circom build",
+      },
+      {
+        description: `${c} dev proving key`,
+        relPath: `circom/build/keys/${c}_dev.zkey`,
+        build: "bash circom/scripts/dev-setup.sh",
+      },
+      {
+        description: `${c} verification key JSON`,
+        relPath: `circom/build/keys/${c}_vk.json`,
+        build: "bash circom/scripts/dev-setup.sh",
+      }
+    );
+  }
+
+  return prereqs;
 }
 
 /** Throws a single error listing every missing artifact and how to build it. */

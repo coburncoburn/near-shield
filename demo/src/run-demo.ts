@@ -1,7 +1,7 @@
 /**
  * Narrated end-to-end demo of the shielded pool against a near-workspaces
  * sandbox. Drives the full deposit -> transfer -> withdraw flow with real
- * Groth16 proofs (via the `shielded-prover` CLI) and a real NEP-141 token.
+ * Groth16 proofs (via in-process snarkjs) and a real NEP-141 token.
  * The same code paths a testnet client uses are exercised here; only the
  * `NearCaller` differs.
  *
@@ -85,6 +85,12 @@ function hex(b: Uint8Array): string {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Reads a snarkjs VK JSON and converts it to the byte format the contract expects. */
+function loadVkBytes(circuit: string): number[] {
+  const json = JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys", `${circuit}_vk.json`), "utf8"));
+  return Array.from(vkJsonToContractBytes(json));
+}
+
 /**
  * Decrypts each ciphertext with Bob's viewing private key and returns the
  * leafIndex of the one Bob can open. The wallet stores notes privately so the
@@ -163,21 +169,12 @@ async function main(): Promise<void> {
     // Pool deploy: read snarkjs VK JSONs, convert to contract bytes, call `new`.
     const poolAccount = await root.createSubAccount("pool");
     await poolAccount.deploy(POOL_OPT_WASM);
-    const vkDeposit = Array.from(
-      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/deposit_vk.json"), "utf8")))
-    );
-    const vkTransfer = Array.from(
-      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/transfer_vk.json"), "utf8")))
-    );
-    const vkWithdraw = Array.from(
-      vkJsonToContractBytes(JSON.parse(readFileSync(resolve(CIRCOM_BUILD, "keys/withdraw_vk.json"), "utf8")))
-    );
     await poolAccount.call(poolAccount, "new", {
       owner: poolAccount.accountId,
       usdc_token: tokenAccount.accountId,
-      vk_deposit: vkDeposit,
-      vk_transfer: vkTransfer,
-      vk_withdraw: vkWithdraw,
+      vk_deposit: loadVkBytes("deposit"),
+      vk_transfer: loadVkBytes("transfer"),
+      vk_withdraw: loadVkBytes("withdraw"),
     }, { gas: "300000000000000" });
     logKv("pool", poolAccount.accountId);
 
