@@ -5,7 +5,7 @@
     {"id": 17, "subject": "C-Task 1: Phase-1 scripts (dev local + Perpetual-PoT import)", "status": "completed", "blockedBy": [16]},
     {"id": 18, "subject": "C-Task 2: Phase-2 init + contributor scripts", "status": "completed", "blockedBy": [17]},
     {"id": 19, "subject": "C-Task 3: Beacon + finalize + vk.bin via sdk adapter + manifest", "status": "completed", "blockedBy": [18]},
-    {"id": 20, "subject": "C-Task 4: verify-ceremony.sh standalone re-verification", "status": "pending", "blockedBy": [19]},
+    {"id": 20, "subject": "C-Task 4: verify-ceremony.sh standalone re-verification", "status": "completed", "blockedBy": [19]},
     {"id": 21, "subject": "C-Task 5: run-dev-ceremony.sh dev dry-run driver", "status": "pending", "blockedBy": [20]},
     {"id": 22, "subject": "C-Task 6: On-contract validation of ceremony output", "status": "pending", "blockedBy": [21]},
     {"id": 23, "subject": "C-Task 7: Fingerprint-guard wiring + RUNBOOK + README", "status": "pending", "blockedBy": [22]}
