@@ -123,6 +123,9 @@ export class SnarkjsProver implements Prover {
     const input = proveRequestToCircomInput(req);
     const { wasm, zkey } = await this.artifacts(req.circuit as CircuitName);
     const { proof } = await snarkjs.groth16.fullProve(input, wasm, zkey);
+    if (!proof || !Array.isArray(proof.pi_a) || !Array.isArray(proof.pi_b) || !Array.isArray(proof.pi_c)) {
+      throw new Error(`snarkjs returned an unexpected proof shape for ${req.circuit}`);
+    }
     return snarkjsProofToBytes(proof as Parameters<typeof snarkjsProofToBytes>[0]);
   }
 }

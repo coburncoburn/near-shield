@@ -324,16 +324,9 @@ describe(
       const zkeyFile = resolve(buildDir, "keys", `${circuit}_dev.zkey`);
       const keysExist = existsSync(zkeyFile);
 
-      it(
+      it.skipIf(!keysExist)(
         `${circuit}: fullProve produces 256-byte proof`,
         async () => {
-          if (!keysExist) {
-            console.log(
-              `SKIP ${circuit}: ${zkeyFile} not found. Run circom/scripts/dev-setup.sh first.`
-            );
-            return;
-          }
-
           const prover = new SnarkjsProver(nodeArtifactProvider(buildDir));
           let req: ProveRequest;
 
@@ -410,7 +403,7 @@ describe(
                 in1Path: fhexArr(in1Path.map((f) => f.value)),
                 spendingKey: fhex(sk.value),
                 out0Amount: fhex(70n),
-                out0OwnerPubkey: fhex(100n),          // renamed → out0Owner
+                out0OwnerPubkey: fhex(100n),          // renamed → out0Owner; different recipient owner (not the sender)
                 out0Blinding: fhex(3n),
                 out1Amount: fhex(30n),
                 out1OwnerPubkey: fhex(owner.value),   // renamed → out1Owner

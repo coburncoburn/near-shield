@@ -19,6 +19,11 @@ import type { ArtifactProvider, CircuitName } from "./snarkjs-prover.js";
  *   <buildDir>/keys/<circuit>_dev.zkey
  *
  * @param buildDir  Absolute path to the circom build output directory.
+ *
+ * @remarks **Node-only** — this function imports `node:fs` and will fail in
+ * browser environments. Browser consumers must supply their own
+ * `ArtifactProvider` (e.g. fetching artifacts over HTTP) and must NOT import
+ * this symbol.
  */
 export function nodeArtifactProvider(buildDir: string): ArtifactProvider {
   return async (c: CircuitName) => ({

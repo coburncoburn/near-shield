@@ -39,4 +39,7 @@ export {
   type CircuitName,
   type ArtifactProvider,
 } from "./snarkjs-prover.js";
+// WARNING: Node-only — imports node:fs. Browser consumers must NOT import this
+// symbol; supply a custom ArtifactProvider instead. Tree-shaking bundlers can
+// drop this via "sideEffects": false in package.json.
 export { nodeArtifactProvider } from "./node-artifacts.js";
