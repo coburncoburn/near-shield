@@ -39,3 +39,4 @@ export {
   type CircuitName,
   type ArtifactProvider,
 } from "./snarkjs-prover.js";
+export { nodeArtifactProvider } from "./node-artifacts.js";

@@ -1,11 +1,10 @@
 /**
  * In-process Groth16 prover backed by snarkjs.
- *
- * `SnarkjsProver` is a stub for now — the witness-building and proof-generation
- * logic is introduced in Task 4 of Sub-project B.
  */
 
+import * as snarkjs from "snarkjs";
 import type { Prover, ProveRequest } from "./prover.js";
+import { snarkjsProofToBytes } from "./groth16-adapter.js";
 
 /** The three circuits supported by the protocol. */
 export type CircuitName = "deposit" | "transfer" | "withdraw";
@@ -113,12 +112,17 @@ export function proveRequestToCircomInput(
 /**
  * In-process prover that drives snarkjs `groth16.fullProve` with artefacts
  * supplied by an `ArtifactProvider`.
+ *
+ * Environment-agnostic: accepts Uint8Array buffers for wasm and zkey so it
+ * works in both Node and browser contexts (no fs dependency here).
  */
 export class SnarkjsProver implements Prover {
   constructor(private readonly artifacts: ArtifactProvider) {}
 
-  /** @throws {Error} Not yet implemented — see Task 4. */
-  async prove(_req: ProveRequest): Promise<Uint8Array> {
-    throw new Error("not implemented");
+  async prove(req: ProveRequest): Promise<Uint8Array> {
+    const input = proveRequestToCircomInput(req);
+    const { wasm, zkey } = await this.artifacts(req.circuit as CircuitName);
+    const { proof } = await snarkjs.groth16.fullProve(input, wasm, zkey);
+    return snarkjsProofToBytes(proof as Parameters<typeof snarkjsProofToBytes>[0]);
   }
 }
