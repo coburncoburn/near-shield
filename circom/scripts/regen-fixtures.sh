@@ -18,3 +18,5 @@ if [ ! -f build/keys/deposit_dev.zkey ] || [ ! -f build/keys/transfer_dev.zkey ]
   bash scripts/dev-setup.sh
 fi
 pnpm --filter @shielded-near/circom exec tsx scripts/gen-fixtures.ts
+# Also regenerate the connected e2e fixtures (deposit-A → deposit-B → transfer → withdraw).
+pnpm --filter @shielded-near/circom exec tsx scripts/gen-e2e-fixtures.ts

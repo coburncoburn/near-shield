@@ -1,0 +1,10 @@
+{
+  "merkle_root": "0x0ceadd7b942eaf133fc165e5009bf70439d83d5346bb917d5e2cade08bb85b00",
+  "nullifier": "0x20067c59d3d8cf71c0e9625a41ae094d90311f5db8edc3d4bff441bed85d483b",
+  "recipient": "bob.test.near",
+  "amount": "30",
+  "auditor_pubkey": "0x2800c38614ac7a32396ac7271935eda2946d2b64ddd15411a53c80df59612468",
+  "view_ct": "0x8182838485868788898a8b8c8d8e8f90",
+  "relayer": "relayer.test.near",
+  "relayer_fee": "2"
+}
