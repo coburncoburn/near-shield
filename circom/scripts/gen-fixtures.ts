@@ -2,7 +2,12 @@
  * gen-fixtures.ts
  *
  * Generates snarkjs Groth16 fixtures for all three circuits (deposit, transfer,
- * withdraw) and writes them to circom/fixtures/<circuit>/.
+ * withdraw) and writes them to circom/fixtures/<circuit>/ by default.
+ *
+ * Output directory and zkey source are configurable via env overrides:
+ *   GENFIX_OUT_DIR    — where fixture subdirs are written (default: circom/fixtures/)
+ *   GENFIX_ZKEY_DIR   — directory containing .zkey files (default: circom/build/keys/)
+ *   GENFIX_ZKEY_SUFFIX — filename suffix for each zkey (default: _dev.zkey)
  *
  * For each circuit:
  *   proof.json   — raw snarkjs proof object
@@ -12,7 +17,7 @@
  *   vk.bin       — vkJsonToContractBytes(vk)
  *   public.bin   — each public signal as 32-byte big-endian field element
  *
- * circom/fixtures/meta.json — { <circuit>: { r1csSha256, nPublic } }
+ * <GENFIX_OUT_DIR>/meta.json — { <circuit>: { r1csSha256, nPublic } }
  *
  * Run with:
  *   pnpm --filter @shielded-near/circom exec tsx scripts/gen-fixtures.ts
@@ -88,7 +93,7 @@ async function main() {
     if (!fs.existsSync(zkey)) missing.push(zkey);
     if (missing.length > 0) {
       throw new Error(
-        `missing circuit build artifacts — run circom/scripts/regen-fixtures.sh\n  missing: ${missing.join(", ")}`
+        `missing build/ceremony artifacts (build circuits via circom/scripts/regen-fixtures.sh; ceremony zkeys via ceremony/scripts/run-dev-ceremony.sh)\n  missing: ${missing.join(", ")}`
       );
     }
   }
