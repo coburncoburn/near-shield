@@ -74,10 +74,11 @@ function encodeG1(p: G1): Uint8Array {
 /**
  * Encode a snarkjs G2 point to 128 bytes (x.c0 ‖ x.c1 ‖ y.c0 ‖ y.c1). Infinity → 128 zeros.
  *
- * IMPORTANT — Fp2 component order (c0 then c1) is a first-attempt assumption.
- * Its semantic correctness cannot be confirmed until the Task 2 contract
- * `verify_groth16` gate runs against a real proof. If that gate rejects valid
- * proofs, swap the c0 ↔ c1 order in each pair here (offsets 0↔32 and 64↔96).
+ * CONFIRMED: the Fp2 component order is p[0][0] → x.c0 (offset 0) and
+ * p[0][1] → x.c1 (offset 32), matching the NEAR alt_bn128 host-function
+ * expectation.  This ordering was validated by the Task 2 verify_groth16
+ * contract gate against real snarkjs proofs for all three circuits (deposit,
+ * transfer, withdraw).  No c0/c1 swap was required.
  */
 function encodeG2(p: G2): Uint8Array {
   const o = new Uint8Array(128);

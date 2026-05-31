@@ -8,6 +8,7 @@
   "devDependencies": {
     "@shielded-near/core": "workspace:*",
     "@shielded-near/client": "workspace:*",
+    "@shielded-near/sdk": "workspace:*",
     "@types/node": "^22.0.0",
     "circom_tester": "0.0.20",
     "typescript": "^5.5.0",
