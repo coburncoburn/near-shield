@@ -2,13 +2,6 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 C="${1:?circuit}"
 require_circuit "$C"
-# Resolve IN/OUT to absolute paths — snarkjs runs under pnpm exec with cwd=circom/
-# so relative paths passed by the caller would be wrong inside that subprocess.
-_abs() {
-  local p="$1"
-  # If already absolute, use as-is; otherwise prepend caller's cwd.
-  [[ "$p" == /* ]] && echo "$p" || echo "$PWD/$p"
-}
 IN="$(_abs "${2:?in.zkey}")"
 OUT="$(_abs "${3:?out.zkey}")"
 NAME="${4:?contributor name}"

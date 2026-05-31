@@ -12,6 +12,11 @@ POWER="${CEREMONY_POWER:-15}"
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
+# Resolve a path to absolute — if already absolute, pass through; else prepend
+# the caller's cwd.  snarkjs runs under `pnpm exec` with cwd=circom/, so all
+# paths passed to it must be absolute.
+_abs() { local p="$1"; [[ "$p" == /* ]] && echo "$p" || echo "$PWD/$p"; }
+
 require_circuit() {
   local c="$1"
   for x in "${CIRCUITS[@]}"; do [[ "$x" == "$c" ]] && return 0; done
