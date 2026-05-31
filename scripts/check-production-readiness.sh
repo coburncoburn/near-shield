@@ -137,7 +137,11 @@ elif [[ ! -d "$DEPLOY_VK_DIR" ]]; then
 else
   _vk_failures=0
   while IFS= read -r vk_file; do
-    fingerprint="$(sha256sum "$vk_file" | awk '{print $1}')"
+    if command -v sha256sum >/dev/null 2>&1; then
+      fingerprint="$(sha256sum "$vk_file" | awk '{print $1}')"
+    else
+      fingerprint="$(shasum -a 256 "$vk_file" | awk '{print $1}')"
+    fi
     for dev_fp in "${DEV_VK_FINGERPRINTS[@]}"; do
       if [[ "$fingerprint" == "$dev_fp" ]]; then
         add_failure "DEV verifying key detected in deploy VK location: $vk_file (sha256=$fingerprint). Run Sub-project C trusted-setup ceremony to produce real keys."

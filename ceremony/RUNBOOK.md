@@ -15,6 +15,12 @@ contributor discards their entropy and does not collude**.  The final beacon
 step adds public, unpredictable randomness so that the outcome cannot be biased
 even if every interactive contributor is corrupted.
 
+> **Recommended contributor count:** A 1-contributor ceremony (coordinator only)
+> provides essentially no security — there is no independence check on the
+> "one honest party" assumption.  Run the ceremony with **at least 5 independent
+> contributors, ideally from different organizations and machines**, so that the
+> one-honest-party assumption is credible.
+
 **NON-PRODUCTION keys** (never deploy):
 
 | Script | Purpose |
@@ -81,6 +87,14 @@ iden3 Perpetual Powers of Tau list:
 The expected `blake2b` digest for `powersOfTau28_hez_final_15.ptau` is
 published in that repository's `README` and the Hermez ceremony attestations.
 
+> **Supply-chain check (required):** Cross-reference the expected hash from
+> **at least two independent sources** — e.g. the
+> [perpetualpowersoftau README](https://github.com/weijiekoh/perpetualpowersoftau),
+> the [iden3/snarkjs attestation listing](https://github.com/iden3/snarkjs#7-prepare-phase-2),
+> and/or the Hermez ceremony attestation posts.  Skipping this step is a
+> supply-chain risk: a tampered ptau file would silently produce keys with
+> hidden toxic waste.
+
 ### 1.3 Import & prepare Phase 2
 
 ```sh
@@ -108,7 +122,7 @@ Produces `ceremony/out/<c>_0000.zkey`.
 
 ### 2.2 Contributors (sequential, one at a time)
 
-For each contributor **N** (starting at N=0):
+For each contributor **N** (starting at N=0, so the first contributor is N=1):
 
 1. **Coordinator sends** `ceremony/out/<c>_000N.zkey` to the contributor
    (secure channel).
@@ -118,9 +132,12 @@ For each contributor **N** (starting at N=0):
    bash ceremony/scripts/contribute.sh \
      <c> \
      /path/to/<c>_000N.zkey \
-     /path/to/<c>_000N+1.zkey \
+     /path/to/<c>_000(N+1).zkey \
      "Contributor Name"
    ```
+
+   For example, if you are **contributor 3**, your input is `<c>_0003.zkey`
+   and your output is `<c>_0004.zkey`.
 
    When prompted by snarkjs, the contributor types **fresh, high-entropy
    randomness** (keyboard mashing, a dice roll, etc.).  **Do NOT pass entropy
@@ -134,9 +151,10 @@ For each contributor **N** (starting at N=0):
 4. **Contributor sends** the new zkey back to the coordinator.
 5. **Contributor discards** all intermediate randomness immediately.
 
-Repeat for each subsequent contributor.  There is no minimum number of
-contributors, but more independent contributors strengthen the security
-assumption.
+Repeat for each subsequent contributor.  **Security note:** the protocol is
+secure if ≥ 1 contributor is honest, but a single-contributor ceremony provides
+~no security.  Strongly recommend **5+ independent contributors** from different
+organizations / machines to make the one-honest-party assumption credible.
 
 #### Entropy hygiene
 
@@ -147,14 +165,18 @@ assumption.
 ### 2.3 Beacon
 
 After all contributors have finished, the coordinator applies a **public,
-unpredictable, pre-announced** beacon to close the ceremony:
+unpredictable, pre-announced** beacon to close the ceremony.  Assume the last
+contributor's output zkey is `ceremony/out/<c>_NNNN.zkey` (where NNNN is the
+final contributor number).
 
 ```sh
+# BEACON_SOURCE is a one-shot environment variable for the script — it is
+# recorded in ceremony/out/manifest.json as the human-readable beacon description.
 BEACON_SOURCE="drand round 12345678" \
 bash ceremony/scripts/beacon.sh \
   <c> \
-  ceremony/out/<c>_final_contrib.zkey \
-  ceremony/out/<c>_beacon.zkey \
+  ceremony/out/<c>_NNNN.zkey \
+  ceremony/out/<c>_final.zkey \
   <64-hex-char-beacon-value> \
   10
 ```
@@ -163,14 +185,17 @@ bash ceremony/scripts/beacon.sh \
   (e.g. `"drand round 12345678"` or `"Bitcoin block 900000 hash"`).
 - **Beacon value** — 32 bytes as 64 lowercase hex digits, taken from the
   announced source.
-- **`iterExp`** — must be 10–63 (10 is standard; higher is slower but no
-  more secure in practice).
+- **`iterExp`** — must be 10–63.  10 is standard and sufficient when the beacon
+  source is genuinely unpredictable and pre-announced; higher values (up to 63)
+  add pre-computation resistance at the cost of runtime.
+- **Output** — `ceremony/out/<c>_final.zkey`.  This name is required by
+  `finalize.sh` and `verify-ceremony.sh`.
 
 **Choosing a good beacon:**
 
 | Source | Where to get it |
 |---|---|
-| drand (recommended) | <https://drand.love> — chain `default`, use a future round number announced before Phase 2 begins |
+| drand (recommended) | <https://drand.love> — confirm the active chain at ceremony time (e.g. `quicknet`); use a future round number announced before Phase 2 begins |
 | Bitcoin block hash | Announce the target block height before the ceremony; use `blockhash` from any indexer after it is mined |
 
 Announce the beacon source and target height/round **before** Phase 2 begins
@@ -179,7 +204,7 @@ so that no party can influence the final beacon value.
 ### 2.4 Finalize
 
 ```sh
-bash ceremony/scripts/finalize.sh <c> ceremony/out/<c>_beacon.zkey
+bash ceremony/scripts/finalize.sh <c> ceremony/out/<c>_final.zkey
 ```
 
 This verifies the full zkey chain (`snarkjs zkey verify`), exports the

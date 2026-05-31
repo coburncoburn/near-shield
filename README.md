@@ -105,6 +105,11 @@ The ceremony tooling and step-by-step runbook live in `ceremony/`:
   DEPLOY_VK_DIR="$(pwd)/ceremony/out" bash scripts/check-production-readiness.sh
   ```
 
+  > **Note:** this command must be run from a **fully-built state** — it also
+  > runs the other production-readiness gates (optimised WASM check, bulk-memory
+  > feature validation, etc.), not just the VK fingerprint check.  Run the build
+  > prereqs first (see above) before invoking with `DEPLOY_VK_DIR`.
+
 The fast dev loop and all tests continue to use the DEV keys from
 `circom/scripts/dev-setup.sh`; only the production deploy path requires the
 real ceremony keys.
