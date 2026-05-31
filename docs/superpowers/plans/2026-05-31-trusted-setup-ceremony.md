@@ -195,7 +195,7 @@ node "$CEREMONY_ROOT/scripts/manifest.mjs" finalize-circuit "$C" "$ZKEY" "$OUT_D
 `chmod +x` the two .sh.
 
 - [ ] **Step 4: Verify + commit**
-Run (continuing the deposit chain from Task 2): `bash ceremony/scripts/beacon.sh deposit ceremony/out/deposit_0001.zkey ceremony/out/deposit_final.zkey 0000000000000000000000000000000000000000000000000000000000000000 8` then `bash ceremony/scripts/finalize.sh deposit ceremony/out/deposit_final.zkey`. Expect "ZKey Ok!", a `deposit_vk.json`, `out/deposit/vk.bin` of length 768, and manifest entries. Paste evidence (`wc -c ceremony/out/deposit/vk.bin` → 768).
+Run (continuing the deposit chain from Task 2): `bash ceremony/scripts/beacon.sh deposit ceremony/out/deposit_0001.zkey ceremony/out/deposit_final.zkey 0000000000000000000000000000000000000000000000000000000000000000 10` then `bash ceremony/scripts/finalize.sh deposit ceremony/out/deposit_final.zkey`. (snarkjs requires beacon iterExp in [10,63].) Expect "ZKey Ok!", a `deposit_vk.json`, `out/deposit/vk.bin` of length 768, and manifest entries. Paste evidence (`wc -c ceremony/out/deposit/vk.bin` → 768).
 ```bash
 git add -f ceremony/scripts/beacon.sh ceremony/scripts/finalize.sh ceremony/scripts/vk-to-bin.ts
 git commit -m "feat(ceremony): beacon + finalize (zkey verify, VK + vk.bin, manifest)"
@@ -243,7 +243,7 @@ for C in "${CIRCUITS[@]}"; do
     bash "$CEREMONY_ROOT/scripts/contribute.sh" "$C" "$prev" "$next" "dev-contributor-$i" "dev-entropy-$C-$i"
     prev="$next"
   done
-  bash "$CEREMONY_ROOT/scripts/beacon.sh" "$C" "$prev" "$OUT_DIR/${C}_final.zkey" "$DEV_BEACON" 8
+  bash "$CEREMONY_ROOT/scripts/beacon.sh" "$C" "$prev" "$OUT_DIR/${C}_final.zkey" "$DEV_BEACON" 10
   bash "$CEREMONY_ROOT/scripts/finalize.sh" "$C" "$OUT_DIR/${C}_final.zkey"
 done
 bash "$CEREMONY_ROOT/scripts/verify-ceremony.sh"
