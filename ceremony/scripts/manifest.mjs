@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
@@ -52,10 +52,19 @@ function writeManifest(data) {
 function cmdInit(args) {
   const [ptauPath] = args;
   if (!ptauPath) throw new Error('Usage: init <ptauPath>');
+  // I1: Guard against clobbering a populated manifest
+  if (existsSync(manifestPath)) {
+    const existing = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    if (existing.circuits && Object.keys(existing.circuits).length > 0) {
+      throw new Error('manifest already has contributions — delete it manually to re-init');
+    }
+  }
   const abs = resolve(ptauPath);
   const sha256 = sha256Hex(abs);
+  // I2: Store a relative path (relative to outDir) so the manifest is portable
+  const relPath = relative(outDir, abs);
   const manifest = {
-    ptau: { path: abs, sha256, power: POWER },
+    ptau: { path: relPath, sha256, power: POWER },
     circuits: {},
   };
   writeManifest(manifest);
@@ -73,7 +82,13 @@ function cmdAddContribution(args) {
   if (!manifest.circuits[circuit].contributions) {
     manifest.circuits[circuit].contributions = [];
   }
-  manifest.circuits[circuit].contributions.push({ name, contributionHash });
+  // M4: Guard against duplicate (circuit, name)
+  const existing = manifest.circuits[circuit].contributions.find(c => c.name === name);
+  if (existing) {
+    throw new Error(`contribution '${name}' already recorded for circuit '${circuit}' — remove it from the manifest to re-record`);
+  }
+  // M5: Include a timestamp (standard ceremony-transcript practice)
+  manifest.circuits[circuit].contributions.push({ name, contributionHash, timestamp: new Date().toISOString() });
   writeManifest(manifest);
 }
 
@@ -85,6 +100,10 @@ function cmdSetBeacon(args) {
   const manifest = readManifest();
   if (!manifest.circuits[circuit]) {
     manifest.circuits[circuit] = { contributions: [] };
+  }
+  // I3: Guard against silent beacon overwrite
+  if (manifest.circuits[circuit].beacon) {
+    throw new Error(`beacon already set for '${circuit}' — delete manifest to re-set`);
   }
   manifest.circuits[circuit].beacon = { value: beaconHex, source };
   writeManifest(manifest);
