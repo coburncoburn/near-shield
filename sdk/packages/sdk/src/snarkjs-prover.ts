@@ -18,16 +18,82 @@ export type ArtifactProvider = (
   circuit: CircuitName
 ) => Promise<{ wasm: Uint8Array; zkey: Uint8Array }>;
 
+// Ordered public input signal names per circuit (must match `component main { public [...] }`).
+const PUBLIC_NAMES: Record<CircuitName, string[]> = {
+  deposit: ["commitment", "amount", "auditorPubkey", "viewCtHash"],
+  transfer: [
+    "merkleRoot",
+    "nullifier0",
+    "nullifier1",
+    "commitmentOut0",
+    "commitmentOut1",
+    "auditorPubkey",
+    "recipientAuditorPubkey",
+    "viewCtHashSender",
+    "viewCtHashRecipient",
+  ],
+  withdraw: [
+    "merkleRoot",
+    "nullifier",
+    "recipient",
+    "amount",
+    "relayer",
+    "relayerFee",
+    "auditorPubkey",
+    "viewCtHash",
+  ],
+};
+
+// Witness key renames: wallet uses PubKey suffix but circom uses shorter names.
+const RENAME: Record<CircuitName, Record<string, string>> = {
+  deposit: {},
+  transfer: {
+    in0OwnerPubkey: "in0Owner",
+    in1OwnerPubkey: "in1Owner",
+    out0OwnerPubkey: "out0Owner",
+    out1OwnerPubkey: "out1Owner",
+  },
+  withdraw: {
+    noteOwnerPubkey: "noteOwner",
+    noteAuditorPubkey: "noteAuditor",
+  },
+};
+
+// Convert a hex string (or array of hex strings) to decimal string(s) as snarkjs expects.
+const conv = (v: unknown): string | string[] =>
+  Array.isArray(v)
+    ? (v as string[]).map((x) => BigInt(x as string).toString())
+    : BigInt(v as string).toString();
+
 /**
  * Map a generic `ProveRequest` to the flat input object expected by the
  * circom-generated witness calculator.
  *
- * @throws {Error} Not yet implemented — see Task 3.
+ * Public inputs are mapped positionally to their named signals; witness keys
+ * are renamed via the per-circuit RENAME map (e.g. `in0OwnerPubkey` →
+ * `in0Owner`). All values are converted from 0x-prefixed hex to decimal
+ * strings as snarkjs requires.
  */
 export function proveRequestToCircomInput(
-  _req: ProveRequest
+  req: ProveRequest
 ): Record<string, string | string[]> {
-  throw new Error("not implemented");
+  const circuit = req.circuit as CircuitName;
+  const names = PUBLIC_NAMES[circuit];
+  if (!names) throw new Error(`unknown circuit: ${req.circuit}`);
+  if (req.publicInputs.length !== names.length) {
+    throw new Error(
+      `${req.circuit}: expected ${names.length} public inputs, got ${req.publicInputs.length}`
+    );
+  }
+  const input: Record<string, string | string[]> = {};
+  names.forEach((n, i) => {
+    input[n] = conv(req.publicInputs[i]);
+  });
+  const rename = RENAME[circuit];
+  for (const [k, v] of Object.entries(req.witness)) {
+    input[rename[k] ?? k] = conv(v);
+  }
+  return input;
 }
 
 /**
