@@ -213,7 +213,77 @@ describe("deploy pipeline — mainnet emit (confirmed)", () => {
   );
 });
 
-// ── Test 5: mainnet without --confirm-mainnet ─────────────────────────────────
+// ── Test 5: non-canonical WASM rejected for testnet/mainnet ──────────────────
+//
+// Gate: for testnet/mainnet, opts.wasm must resolve to the canonical readiness-
+// checked artifact. A different path would pass readiness (which validates the
+// canonical file) while deploying an unvalidated WASM.
+// sandbox is exempt — local/test workflows may use alternate paths there.
+
+describe("deploy pipeline — non-canonical WASM rejected for testnet/mainnet", () => {
+  it(
+    "throws when --wasm is not the canonical artifact on mainnet",
+    async () => {
+      await expect(
+        run({
+          network: "mainnet",
+          vkDir: VK_DIR,
+          wasm: "/tmp/other.wasm", // non-canonical path
+          repoRoot: REPO,
+          owner: "owner.near",
+          usdcToken: "usdc.near",
+          account: "pool.near",
+          confirmMainnet: true,
+          skipReadiness: true,
+        })
+      ).rejects.toThrow(/--wasm must be the readiness-checked artifact/);
+    },
+    10_000
+  );
+
+  it(
+    "throws when --wasm is not the canonical artifact on testnet",
+    async () => {
+      await expect(
+        run({
+          network: "testnet",
+          vkDir: VK_DIR,
+          wasm: "/tmp/other.wasm", // non-canonical path
+          repoRoot: REPO,
+          owner: "owner.testnet",
+          usdcToken: "usdc.testnet",
+          account: "pool.testnet",
+          skipReadiness: true,
+        })
+      ).rejects.toThrow(/--wasm must be the readiness-checked artifact/);
+    },
+    10_000
+  );
+
+  it(
+    "sandbox allows a non-canonical --wasm path (no throw)",
+    async () => {
+      // sandbox must remain flexible for local/test workflows; the canonical WASM
+      // check must NOT apply there.  We verify the error is NOT the wasm-path gate.
+      // (The error will be something else — missing VKs or WASM — since /tmp/other.wasm
+      // doesn't exist, but it must NOT be the canonical-wasm gate.)
+      await expect(
+        run({
+          network: "sandbox",
+          vkDir: VK_DIR,
+          wasm: "/tmp/other.wasm",
+          repoRoot: REPO,
+          owner: "owner.sandbox.near",
+          usdcToken: "usdc.sandbox.near",
+          skipReadiness: true,
+        })
+      ).rejects.toThrow(/^(?!.*--wasm must be the readiness-checked artifact)/);
+    },
+    10_000
+  );
+});
+
+// ── Test 6: mainnet without --confirm-mainnet ─────────────────────────────────
 
 describe("deploy pipeline — mainnet without --confirm-mainnet", () => {
   it.skipIf(!prereqs)(

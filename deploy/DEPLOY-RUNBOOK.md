@@ -127,8 +127,11 @@ pnpm --filter @shielded-near/deploy deploy -- \
 **Flag notes:**
 
 - `--vk-dir <dir>` — directory containing per-circuit subdirectories, each with a
-  `vk.json` (e.g. `ceremony/out/deposit/vk.json`).  The fingerprint guard separately
-  scans `vk.bin` files in the same directory.  Example value: `$(pwd)/ceremony/out`.
+  `vk.json` (e.g. `ceremony/out/deposit/vk.json`).  The deploy tool's authoritative
+  DEV-key fingerprint gate operates on the JSON-derived bytes that will actually be
+  deployed (output of `vkJsonToContractBytes`), not on any `vk.bin` file.  The
+  separate `DEPLOY_VK_DIR` mechanism in `check-production-readiness.sh` does scan
+  `vk.bin` files, but that is a build-time check only.  Example value: `$(pwd)/ceremony/out`.
 
 - `--wasm <path>` — path to the optimised WASM artifact.  Defaults to
   `target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm` (relative to the

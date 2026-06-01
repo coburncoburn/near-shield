@@ -41,12 +41,36 @@ export type RunResult =
   | { mode: "sandbox"; sandbox: SandboxResult; receiptPath: string }
   | { mode: "emit"; command: string; argsPath: string; summary: string; checklist?: string[] };
 
+/**
+ * The canonical readiness-checked WASM artifact path (relative to repoRoot).
+ * This is the path validated by scripts/check-production-readiness.sh.
+ * For testnet and mainnet, opts.wasm MUST resolve to this path — any other WASM
+ * is not covered by the readiness check and is therefore not permitted.
+ */
+export const CANONICAL_WASM = "target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm";
+
 export async function run(opts: RunOpts): Promise<RunResult> {
   // 1. Build-check: skip only when caller explicitly opts out (tests do so for speed).
   //    The CLI main() refuses --skip-readiness for mainnet/testnet. For testnet/mainnet
   //    in real use this gate ensures the WASM is the production groth16-verifier, not the mock.
   if (!opts.skipReadiness) {
     runReadinessCheck(opts.repoRoot);
+  }
+
+  // 1b. For testnet/mainnet, enforce that opts.wasm is the readiness-checked canonical
+  //     artifact. --wasm <other> would pass the readiness gate (which validates the
+  //     canonical path) while deploying/emitting a DIFFERENT, unvalidated file —
+  //     undermining the "impossible to deploy a mock-verifier WASM" guarantee.
+  //     Sandbox is exempt: local/test workflows legitimately use alternate paths.
+  if (opts.network === "testnet" || opts.network === "mainnet") {
+    const canonicalWasm = resolve(opts.repoRoot, CANONICAL_WASM);
+    const givenWasm = resolve(opts.wasm);
+    if (givenWasm !== canonicalWasm) {
+      throw new Error(
+        `for testnet/mainnet, --wasm must be the readiness-checked artifact ` +
+          `(${canonicalWasm}); a custom WASM is not validated by check-production-readiness.sh`
+      );
+    }
   }
 
   // 2. Config: merges file + overrides; throws if usdc_token/owner/account missing.
