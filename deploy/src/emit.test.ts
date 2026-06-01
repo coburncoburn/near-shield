@@ -51,19 +51,21 @@ describe("emitDeployCommand", () => {
     const input = makeInput("mainnet", outDir);
     const { command } = emitDeployCommand(input);
 
-    expect(command).toContain(`near contract deploy ${input.account} use-file ${input.wasmPath}`);
+    expect(command).toContain(`near contract deploy ${input.account} use-file '${input.wasmPath}'`);
     expect(command).toContain("with-init-call new json-args");
     expect(command).toContain("network-config mainnet");
+    expect(command).toContain("300.0 Tgas");
   });
 
   it("returns command containing 'network-config testnet' for testnet", () => {
     const outDir = makeTmpDir();
     const input = makeInput("testnet", outDir);
-    const { command } = emitDeployCommand(input);
+    const { command, argsPath } = emitDeployCommand(input);
 
-    expect(command).toContain(`near contract deploy ${input.account} use-file ${input.wasmPath}`);
+    expect(command).toContain(`near contract deploy ${input.account} use-file '${input.wasmPath}'`);
     expect(command).toContain("with-init-call new json-args");
     expect(command).toContain("network-config testnet");
+    expect(command).toContain(argsPath);
   });
 
   it("writes <outDir>/<network>-init-args.json that round-trips the initArgs", () => {
@@ -103,8 +105,8 @@ describe("emitDeployCommand", () => {
     expect(summary).toContain("usdc.testnet");
   });
 
-  it("does not import or call any network/broadcast code (pure file + string output)", () => {
-    // This is verified structurally: emitDeployCommand only writes a file and returns strings.
+  it("returns plain strings + an args path, no broadcast", () => {
+    // Structural check: emitDeployCommand only writes a file and returns strings.
     // No near-workspaces or RPC calls are made. The test itself makes no network requests.
     const outDir = makeTmpDir();
     const input = makeInput("mainnet", outDir);
