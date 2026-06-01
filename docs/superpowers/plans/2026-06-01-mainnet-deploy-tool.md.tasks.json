@@ -7,7 +7,7 @@
     {"id": 27, "subject": "D-Task 3: Emit path for testnet/mainnet (emit.ts)", "status": "completed", "blockedBy": [26]},
     {"id": 28, "subject": "D-Task 4: Sandbox deploy path (sandbox.ts)", "status": "completed", "blockedBy": [26]},
     {"id": 29, "subject": "D-Task 5: CLI entrypoint (deploy.ts) + e2e tests", "status": "completed", "blockedBy": [27, 28]},
-    {"id": 30, "subject": "D-Task 6: DEPLOY-RUNBOOK + README + final verification", "status": "pending", "blockedBy": [29]}
+    {"id": 30, "subject": "D-Task 6: DEPLOY-RUNBOOK + README + final verification", "status": "completed", "blockedBy": [29]}
   ],
   "lastUpdated": "2026-06-01T00:00:00Z"
 }
