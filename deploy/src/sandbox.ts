@@ -1,3 +1,4 @@
+/** Sandbox deploy path: deploys the pool WASM to a near-workspaces sandbox, inits via new(), and post-verifies the on-chain views. The automated validation path for the deploy tool. */
 import { Worker } from "near-workspaces";
 import type { InitArgs } from "./assemble.js";
 
@@ -16,7 +17,11 @@ export async function deployToSandbox(
   const worker = await Worker.init();
   try {
     const pool = await worker.rootAccount.createSubAccount("pool");
-    await pool.deploy(wasmPath);
+    const deployResult = await pool.deploy(wasmPath);
+    if (deployResult.failed)
+      throw new Error(
+        `deploy failed: ${deployResult.receiptFailureMessages?.join("; ") ?? "unknown"}`
+      );
     // 300 Tgas: new() writes ~2.9 KB of VK bytes + builds the depth-20 tree; the
     // near-workspaces default (~30 Tgas) is too tight. Mirrors demo/src/run-demo.ts.
     await pool.call(pool, "new", initArgs as unknown as Record<string, unknown>, { gas: "300000000000000" });
