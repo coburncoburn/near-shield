@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { vkJsonToContractBytes } from "@shielded-near/sdk";
+import { vkJsonToContractBytes, type SnarkjsVk } from "@shielded-near/sdk";
 import { type Circuit, assertVkLength, assertNotDevKey, vkSha256 } from "./gates.js";
 
 export interface InitArgs {
@@ -26,7 +26,11 @@ function readVkJson(vkDir: string, c: Circuit): unknown {
     throw new Error(
       `vk.json not found for ${c} under ${vkDir} (looked at ${nested} and ${flat})`
     );
-  return JSON.parse(readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch (e) {
+    throw new Error(`Failed to parse VK JSON for ${c} at ${p}: ${(e as Error).message}`);
+  }
 }
 
 /** Reads the ceremony vk.json per circuit, runs the gates on the ACTUAL deployed bytes, assembles new() args. */
@@ -37,7 +41,7 @@ export function assembleInitArgs(
 ): AssembleResult {
   const bytes = {} as Record<Circuit, Uint8Array>;
   for (const c of CIRCUITS) {
-    const b = vkJsonToContractBytes(readVkJson(vkDir, c) as any);
+    const b = vkJsonToContractBytes(readVkJson(vkDir, c) as SnarkjsVk);
     assertVkLength(c, b); // length of the bytes actually deployed (Gate #3)
     assertNotDevKey(c, b); // authoritative DEV-key block (Gate #2)
     bytes[c] = b;

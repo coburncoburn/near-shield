@@ -18,7 +18,11 @@ export function loadConfig(
 
   let fileValues: Partial<DeployConfig> = {};
   if (existsSync(filePath)) {
-    fileValues = JSON.parse(readFileSync(filePath, "utf8")) as Partial<DeployConfig>;
+    try {
+      fileValues = JSON.parse(readFileSync(filePath, "utf8")) as Partial<DeployConfig>;
+    } catch (e) {
+      throw new Error(`Failed to parse config file ${filePath}: ${(e as Error).message}`);
+    }
   }
 
   const merged: DeployConfig = {
@@ -28,13 +32,13 @@ export function loadConfig(
     usdcToken: overrides?.usdcToken ?? fileValues.usdcToken ?? "",
   };
 
-  if (!merged.account) {
+  if (!merged.account?.trim()) {
     throw new Error(`loadConfig(${network}): "account" is required but missing after merge`);
   }
-  if (!merged.owner) {
+  if (!merged.owner?.trim()) {
     throw new Error(`loadConfig(${network}): "owner" is required but missing after merge`);
   }
-  if (!merged.usdcToken) {
+  if (!merged.usdcToken?.trim()) {
     throw new Error(
       `loadConfig(${network}): "usdcToken" is required but missing — mainnet value must be runbook-verified`
     );

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { assembleInitArgs } from "./assemble.js";
 
@@ -39,5 +41,14 @@ describe("assembleInitArgs — DEV key detection", () => {
     expect(() =>
       assembleInitArgs(DEV_FIXTURES, "owner.near", "usdc.near")
     ).toThrow(/DEV verifying key detected/);
+  });
+});
+
+describe("assembleInitArgs — missing vk.json", () => {
+  it("throws an actionable error naming the missing file path", () => {
+    const emptyDir = mkdtempSync(tmpdir() + "/assemble-test-");
+    expect(() =>
+      assembleInitArgs(emptyDir, "owner.near", "usdc.near")
+    ).toThrow(/vk\.json not found for deposit/);
   });
 });
