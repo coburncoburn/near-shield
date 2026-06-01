@@ -62,8 +62,9 @@ A TS deploy tool (new `deploy/` workspace package; reuses `@shielded-near/sdk`
    source-dir layout. (Ceremony VKs are non-DEV → pass.)
    - DEV fingerprint source of truth: the three sha256s registered in `check-production-readiness.sh`,
      which match `circom/fixtures/<c>/vk.bin` exactly (the canonical committed DEV `vk.bin`s).
-3. **VKs present + well-formed.** Each `vk.bin` is the expected length (deposit 768 / transfer 1088
-   / withdraw 1024).
+3. **VKs present + well-formed.** Assert `vkJsonToContractBytes(<c> vk.json).length` equals the
+   expected length (deposit 768 / transfer 1088 / withdraw 1024) — i.e. length-check the bytes the
+   tool will actually deploy, not a sibling `vk.bin` (which may not exist in a json-only source dir).
 
 The tool cannot deploy DEV keys or a mock-verifier WASM on any network.
 
