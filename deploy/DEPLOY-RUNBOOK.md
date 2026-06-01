@@ -67,6 +67,10 @@ independently verified before the operator broadcasts:
    ```sh
    cargo build -p shielded-pool --target wasm32-unknown-unknown --release \
      --no-default-features --features groth16-verifier
+   wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz \
+     --strip-debug --strip-producers \
+     target/wasm32-unknown-unknown/release/shielded_pool.wasm \
+     -o target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
    ./scripts/check-production-readiness.sh
    ```
    The script must exit 0.  It validates WASM size, bulk-memory lowering, and
@@ -120,6 +124,16 @@ pnpm --filter @shielded-near/deploy deploy -- \
   --confirm-mainnet
 ```
 
+**Flag notes:**
+
+- `--vk-dir <dir>` — directory containing per-circuit subdirectories, each with a
+  `vk.json` (e.g. `ceremony/out/deposit/vk.json`).  The fingerprint guard separately
+  scans `vk.bin` files in the same directory.  Example value: `$(pwd)/ceremony/out`.
+
+- `--wasm <path>` — path to the optimised WASM artifact.  Defaults to
+  `target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm` (relative to the
+  repo root).  Override with `--wasm <path>` if you have placed the artifact elsewhere.
+
 What the tool does (in order):
 
 1. Runs `scripts/check-production-readiness.sh` (always; `--skip-readiness` is
@@ -147,6 +161,22 @@ Verify the printed summary:
 | owner | Your ledger / multisig account id |
 | usdc_token | The canonical mainnet USDC account id you verified above |
 
+To compute the hashes independently and compare against the published ceremony transcript:
+
+```sh
+# WASM (Linux / WSL):
+sha256sum target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
+# WASM (macOS):
+shasum -a 256 target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
+
+# Per-circuit VKs (Linux / WSL):
+sha256sum ceremony/out/deposit/vk.bin ceremony/out/transfer/vk.bin ceremony/out/withdraw/vk.bin
+# Per-circuit VKs (macOS):
+shasum -a 256 ceremony/out/deposit/vk.bin ceremony/out/transfer/vk.bin ceremony/out/withdraw/vk.bin
+```
+
+The hashes must match those published in the ceremony transcript before broadcasting.
+
 **Do not broadcast until every field checks out.**
 
 ---
@@ -162,9 +192,14 @@ near contract deploy <account> use-file '<wasm-path>' \
   network-config mainnet sign-with-keychain send
 ```
 
+> **WARNING: `sign-with-keychain` is a PLACEHOLDER — do NOT use it for mainnet.**
+> Mainnet broadcast MUST use `sign-with-ledger` (hardware wallet) or the appropriate
+> multisig signing flow.  Broadcasting with a hot keychain key violates Precondition 5
+> (owner = ledger/multisig) and is a critical security violation.
+
 - **near-cli-rs** (not the legacy `near-cli` JS tool) is required.  The command
-  was tested against near-cli-rs v0.17.  Adapt `sign-with-keychain` to
-  `sign-with-ledger` or a multisig flow as appropriate for your signer.
+  was tested against near-cli-rs v0.17.  Replace `sign-with-keychain` with
+  `sign-with-ledger` or a multisig signing flow as required by your signer.
 - The init args are large (VK byte arrays totalling ~2.9 KiB of state) so the
   command `cat`s the written args file rather than inlining them.
 - 300 Tgas matches the sandbox-validated gas cost for `new()`.

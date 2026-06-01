@@ -131,13 +131,15 @@ that the operator reviews and then broadcasts manually via near-cli-rs with a
 ledger or multisig signer.  It **never holds a mainnet signing key** and **never
 broadcasts**.
 
-Mainnet emit is **gated** on three mandatory preconditions (the tool refuses
+Mainnet emit is **gated** on five mandatory preconditions (the tool refuses
 without `--confirm-mainnet`, and even then it prints the checklist for the
 operator to re-verify before broadcasting):
 
 1. Real trusted-setup ceremony completed + VKs published (see [`ceremony/RUNBOOK.md`](ceremony/RUNBOOK.md))
 2. Independent circuit soundness review complete
 3. External security audit complete
+4. Canonical mainnet USDC token id verified from an authoritative source
+5. Owner = ledger or multisig account (not a hot key)
 
 The tool also refuses DEV verifying keys (byte-level fingerprint check, any
 source directory) and the mock-verifier WASM via `scripts/check-production-readiness.sh`,
