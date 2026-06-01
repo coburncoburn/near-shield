@@ -114,6 +114,39 @@ The fast dev loop and all tests continue to use the DEV keys from
 `circom/scripts/dev-setup.sh`; only the production deploy path requires the
 real ceremony keys.
 
+## Deploying
+
+The deploy tooling lives in `deploy/`.  The operator runbook is
+[`deploy/DEPLOY-RUNBOOK.md`](deploy/DEPLOY-RUNBOOK.md).
+
+**Sandbox validation** (runs the full 33-test suite including a near-workspaces
+sandbox deploy+verify):
+
+```sh
+pnpm --filter @shielded-near/deploy test
+```
+
+**Mainnet** is operator-driven: the tool emits a `near contract deploy …` command
+that the operator reviews and then broadcasts manually via near-cli-rs with a
+ledger or multisig signer.  It **never holds a mainnet signing key** and **never
+broadcasts**.
+
+Mainnet emit is **gated** on three mandatory preconditions (the tool refuses
+without `--confirm-mainnet`, and even then it prints the checklist for the
+operator to re-verify before broadcasting):
+
+1. Real trusted-setup ceremony completed + VKs published (see [`ceremony/RUNBOOK.md`](ceremony/RUNBOOK.md))
+2. Independent circuit soundness review complete
+3. External security audit complete
+
+The tool also refuses DEV verifying keys (byte-level fingerprint check, any
+source directory) and the mock-verifier WASM via `scripts/check-production-readiness.sh`,
+which is always run for mainnet and testnet and cannot be skipped.
+
+See [`deploy/DEPLOY-RUNBOOK.md`](deploy/DEPLOY-RUNBOOK.md) for the full
+preconditions checklist, config format, emit command, review checklist, broadcast
+instructions, and post-deploy verification steps.
+
 ## Production Gate
 
 The production-readiness script verifies:
