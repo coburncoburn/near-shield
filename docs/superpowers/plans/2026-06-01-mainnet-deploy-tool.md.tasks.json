@@ -1,0 +1,13 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-01-mainnet-deploy-tool.md",
+  "tasks": [
+    {"id": 24, "subject": "D-Task 0: Scaffold deploy/ workspace package", "status": "pending"},
+    {"id": 25, "subject": "D-Task 1: Safety gates (gates.ts)", "status": "pending", "blockedBy": [24]},
+    {"id": 26, "subject": "D-Task 2: Config + init-args assembly", "status": "pending", "blockedBy": [24, 25]},
+    {"id": 27, "subject": "D-Task 3: Emit path for testnet/mainnet (emit.ts)", "status": "pending", "blockedBy": [26]},
+    {"id": 28, "subject": "D-Task 4: Sandbox deploy path (sandbox.ts)", "status": "pending", "blockedBy": [26]},
+    {"id": 29, "subject": "D-Task 5: CLI entrypoint (deploy.ts) + e2e tests", "status": "pending", "blockedBy": [27, 28]},
+    {"id": 30, "subject": "D-Task 6: DEPLOY-RUNBOOK + README + final verification", "status": "pending", "blockedBy": [29]}
+  ],
+  "lastUpdated": "2026-06-01T00:00:00Z"
+}
