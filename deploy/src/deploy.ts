@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { runReadinessCheck } from "./gates.js";
-import { loadConfig, type DeployConfig } from "./config.js";
+import { loadConfig } from "./config.js";
 import { assembleInitArgs } from "./assemble.js";
 import { emitDeployCommand } from "./emit.js";
 import { deployToSandbox, type SandboxResult } from "./sandbox.js";
@@ -20,22 +20,31 @@ export interface RunOpts {
   confirmMainnet?: boolean;
   /**
    * Skip the production-readiness build check.
-   * Safe for ANY network in tests (readiness is unit-tested separately in gates.test.ts).
-   * The CLI main() enforces: --skip-readiness is NEVER passed for mainnet in real use.
+   * Safe for sandbox in tests (readiness is unit-tested separately in gates.test.ts).
+   * The CLI main() enforces: --skip-readiness is NEVER honoured for testnet or mainnet.
    * Default: false.
    */
   skipReadiness?: boolean;
   outDir?: string;
 }
 
+/** Items the operator must verify before broadcasting a mainnet tx. */
+export const MAINNET_CHECKLIST = [
+  "real ceremony completed + VKs published",
+  "independent circuit soundness review done",
+  "external security audit done",
+  "canonical mainnet USDC token id verified",
+  "owner = ledger/multisig",
+] as const;
+
 export type RunResult =
   | { mode: "sandbox"; sandbox: SandboxResult; receiptPath: string }
-  | { mode: "emit"; command: string; argsPath: string; summary: string };
+  | { mode: "emit"; command: string; argsPath: string; summary: string; checklist?: string[] };
 
 export async function run(opts: RunOpts): Promise<RunResult> {
   // 1. Build-check: skip only when caller explicitly opts out (tests do so for speed).
-  //    The CLI main() refuses --skip-readiness for mainnet. For testnet/mainnet in real
-  //    use this gate ensures the WASM is the production groth16-verifier, not the mock.
+  //    The CLI main() refuses --skip-readiness for mainnet/testnet. For testnet/mainnet
+  //    in real use this gate ensures the WASM is the production groth16-verifier, not the mock.
   if (!opts.skipReadiness) {
     runReadinessCheck(opts.repoRoot);
   }
@@ -45,7 +54,7 @@ export async function run(opts: RunOpts): Promise<RunResult> {
     account: opts.account,
     owner: opts.owner,
     usdcToken: opts.usdcToken,
-  } as Partial<DeployConfig>);
+  });
 
   // 3. Assemble: reads per-circuit vk.json, runs the length + DEV-fingerprint gates on
   //    the ACTUAL bytes to be deployed.  Throws for DEV keys (Gate #2) regardless of
@@ -98,7 +107,12 @@ export async function run(opts: RunOpts): Promise<RunResult> {
     outDir,
   });
 
-  return { mode: "emit", command, argsPath, summary };
+  // Include the gating checklist in the result for mainnet so main() and callers
+  // can display it even after --confirm-mainnet has already been accepted.
+  const checklist: string[] | undefined =
+    opts.network === "mainnet" ? [...MAINNET_CHECKLIST] : undefined;
+
+  return { mode: "emit", command, argsPath, summary, checklist };
 }
 
 // ── CLI entrypoint ────────────────────────────────────────────────────────────
@@ -119,42 +133,53 @@ function parseArgs(argv: string[]): RunOpts {
     const arg = argv[i];
     const next = argv[i + 1];
 
-    if (arg === "--network" && next) {
+    if (arg === "--network") {
+      if (!next || next.startsWith("--")) {
+        throw new Error("--network requires a value: sandbox|testnet|mainnet");
+      }
       if (next !== "sandbox" && next !== "testnet" && next !== "mainnet") {
         throw new Error(`--network must be sandbox|testnet|mainnet, got: ${next}`);
       }
       opts.network = next as "sandbox" | "testnet" | "mainnet";
       i++;
-    } else if (arg === "--vk-dir" && next) {
+    } else if (arg === "--vk-dir") {
+      if (!next || next.startsWith("--")) {
+        throw new Error("--vk-dir requires a value: path to directory containing per-circuit vk.json files");
+      }
       opts.vkDir = resolve(next);
       i++;
-    } else if (arg === "--wasm" && next) {
+    } else if (arg === "--wasm") {
+      if (!next || next.startsWith("--")) {
+        throw new Error("--wasm requires a value: path to the groth16-verifier opt WASM file");
+      }
       opts.wasm = resolve(next);
       i++;
-    } else if (arg === "--owner" && next) {
+    } else if (arg === "--owner" && next && !next.startsWith("--")) {
       opts.owner = next;
       i++;
-    } else if (arg === "--usdc-token" && next) {
+    } else if (arg === "--usdc-token" && next && !next.startsWith("--")) {
       opts.usdcToken = next;
       i++;
-    } else if (arg === "--account" && next) {
+    } else if (arg === "--account" && next && !next.startsWith("--")) {
       opts.account = next;
       i++;
     } else if (arg === "--confirm-mainnet") {
       opts.confirmMainnet = true;
     } else if (arg === "--skip-readiness") {
-      // NEVER honoured for mainnet in main(); checked below after full parse.
+      // Honoured only for sandbox; reset for testnet/mainnet after full parse.
       opts.skipReadiness = true;
-    } else if (arg === "--out-dir" && next) {
+    } else if (arg === "--out-dir" && next && !next.startsWith("--")) {
       opts.outDir = resolve(next);
       i++;
+    } else {
+      throw new Error(`Unknown flag: ${arg}`);
     }
   }
 
-  // Safety: never silently skip readiness for mainnet via CLI.
-  if (opts.skipReadiness && opts.network === "mainnet") {
+  // Safety: never silently skip readiness for testnet or mainnet via CLI.
+  if (opts.skipReadiness && (opts.network === "mainnet" || opts.network === "testnet")) {
     process.stderr.write(
-      "WARNING: --skip-readiness is ignored for mainnet to protect production safety.\n"
+      `WARNING: --skip-readiness is ignored for ${opts.network} to protect production safety.\n`
     );
     opts.skipReadiness = false;
   }
@@ -179,21 +204,22 @@ async function main(): Promise<void> {
       `Views: owner=${result.sandbox.owner} usdc_token=${result.sandbox.usdcToken} paused=${result.sandbox.paused}`
     );
   } else {
+    // Print the mainnet gating checklist so the operator re-verifies before broadcasting.
+    if (result.checklist) {
+      console.log(`\nMAINNET PRECONDITIONS — verify before broadcasting:`);
+      for (const item of result.checklist) {
+        console.log(`  [ ] ${item}`);
+      }
+    }
     console.log(`\n=== Deploy summary ===\n${result.summary}\n`);
     console.log(`Init args written to: ${result.argsPath}`);
     console.log(`\nBroadcast command (review then broadcast via near-cli-rs):\n${result.command}\n`);
   }
 }
 
-// Guard: only execute main() when this module is the direct entrypoint (tsx/node invocation).
-// Importing the module in tests does NOT trigger main().
-const scriptPath = resolve(import.meta.dirname, "deploy.js");
-const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
-const isTsx = process.argv[1]?.includes("tsx");
-const isDirectRun = isTsx
-  ? process.argv.slice(2).some((a) => a.includes("deploy"))
-  : entryPath === scriptPath ||
-    entryPath === resolve(import.meta.dirname, "deploy.ts");
+// Guard: only execute main() when this module is the direct entrypoint.
+// Uses the standard ESM idiom for robustness across tsx, ts-node, and node.
+const isDirectRun = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
 
 if (isDirectRun) {
   main().catch((e) => {

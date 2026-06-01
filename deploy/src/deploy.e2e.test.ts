@@ -3,13 +3,13 @@
  *
  * skipReadiness:true is used throughout so the suite doesn't re-invoke the slow
  * check-production-readiness.sh script — that script is exercised separately in
- * gates.test.ts.  The production CLI (main) refuses --skip-readiness for mainnet.
+ * gates.test.ts.  The production CLI (main) refuses --skip-readiness for mainnet/testnet.
  */
 import { describe, it, expect } from "vitest";
 import { mkdirSync, copyFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { run } from "./deploy.js";
+import { run, MAINNET_CHECKLIST } from "./deploy.js";
 
 // Repo root: deploy/src → ../.. = repo root
 const REPO = resolve(import.meta.dirname, "../..");
@@ -110,27 +110,19 @@ describe("deploy pipeline — DEV-key abort (circom/fixtures, has vk.bin)", () =
 // circom/build/keys/<c>_vk.json (no vk.bin present).  The gate must STILL reject,
 // proving it fingerprints the bytes (vkJsonToContractBytes output), not a vk.bin scan.
 
+const buildKeysDir = resolve(REPO, "circom/build/keys");
+const jsonOnlyKeysPresent = ["deposit", "transfer", "withdraw"].every((c) =>
+  existsSync(join(buildKeysDir, `${c}_vk.json`))
+);
+
 describe("deploy pipeline — DEV-key abort (json-only dir, NO vk.bin) [KEY SECURITY TEST]", () => {
-  it(
+  it.skipIf(!jsonOnlyKeysPresent)(
     "rejects with /DEV verifying key detected/ even when no vk.bin is present",
     async () => {
-      const buildKeysDir = resolve(REPO, "circom/build/keys");
-      const circuits = ["deposit", "transfer", "withdraw"] as const;
-
-      // Verify source files exist (json-only, no vk.bin).
-      for (const c of circuits) {
-        const src = join(buildKeysDir, `${c}_vk.json`);
-        if (!existsSync(src)) {
-          // Skip if the build/keys dir isn't populated in this environment.
-          console.warn(`SKIP: ${src} not found — skipping json-only DEV-key test`);
-          return;
-        }
-      }
-
       const tmpDir = resolve(tmpdir(), `deploy-e2e-devkey-jsononly-${Date.now()}`);
       try {
         // Lay out <tmp>/<c>/vk.json (nested layout, no vk.bin)
-        for (const c of circuits) {
+        for (const c of ["deposit", "transfer", "withdraw"] as const) {
           const circDir = join(tmpDir, c);
           mkdirSync(circDir, { recursive: true });
           copyFileSync(join(buildKeysDir, `${c}_vk.json`), join(circDir, "vk.json"));
@@ -164,7 +156,7 @@ describe("deploy pipeline — DEV-key abort (json-only dir, NO vk.bin) [KEY SECU
 
 describe("deploy pipeline — mainnet emit (confirmed)", () => {
   it.skipIf(!prereqs)(
-    "emits deploy command + writes init-args file",
+    "emits deploy command + writes init-args file + includes gating checklist",
     async () => {
       const outDir = resolve(tmpdir(), `deploy-e2e-mainnet-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
@@ -203,6 +195,16 @@ describe("deploy pipeline — mainnet emit (confirmed)", () => {
         expect(args.usdc_token).toBe("usdc.near");
         expect(Array.isArray(args.vk_deposit)).toBe(true);
         expect(args.vk_deposit.length).toBeGreaterThan(0);
+
+        // Gating checklist must be present and contain all required items.
+        expect(result.checklist).toBeDefined();
+        expect(result.checklist).toContain("external security audit done");
+        expect(result.checklist).toContain("real ceremony completed + VKs published");
+        expect(result.checklist).toContain("independent circuit soundness review done");
+        expect(result.checklist).toContain("canonical mainnet USDC token id verified");
+        expect(result.checklist).toContain("owner = ledger/multisig");
+        // Checklist must match the canonical exported constant exactly.
+        expect(result.checklist).toEqual([...MAINNET_CHECKLIST]);
       } finally {
         rmSync(outDir, { recursive: true, force: true });
       }
@@ -214,16 +216,11 @@ describe("deploy pipeline — mainnet emit (confirmed)", () => {
 // ── Test 5: mainnet without --confirm-mainnet ─────────────────────────────────
 
 describe("deploy pipeline — mainnet without --confirm-mainnet", () => {
-  it(
+  it.skipIf(!prereqs)(
     "throws asking for --confirm-mainnet",
     async () => {
       // Uses a dummy vkDir/wasm; the mainnet confirmation gate is checked AFTER
-      // config+assemble, so we need valid VKs.  Skip if ceremony absent.
-      if (!prereqs) {
-        console.warn("SKIP: prereqs absent — skipping mainnet no-confirm test");
-        return;
-      }
-
+      // config+assemble, so we need valid VKs.
       await expect(
         run({
           network: "mainnet",
