@@ -1,6 +1,6 @@
-import { openSealed } from "./encrypt.js";
+import { openSealed, SEAL_CONTEXT_NOTE } from "./encrypt.js";
 import { Field } from "./field.js";
-import { commitNote, type Note } from "./note.js";
+import { auditorPubkeyToField, commitNote, type Note } from "./note.js";
 
 /**
  * Note ciphertext as it would appear in a NEAR contract log: the sealed bytes,
@@ -30,7 +30,7 @@ export function scanNotes(
 ): DiscoveredNote[] {
   const out: DiscoveredNote[] = [];
   for (const ct of cts) {
-    const plain = openSealed(viewingPrivateKey, ct.sealed);
+    const plain = openSealed(viewingPrivateKey, ct.sealed, SEAL_CONTEXT_NOTE);
     if (!plain) continue;
     const payload = decodeNotePayload(plain);
     if (!payload) continue;
@@ -74,15 +74,20 @@ export function encodeNotePayload(n: Note, auditorPubkeyBytes?: Uint8Array): Uin
 export function decodeNotePayload(b: Uint8Array): DecodedNotePayload | null {
   try {
     const p = JSON.parse(new TextDecoder().decode(b)) as NotePayload;
-    return {
-      note: {
-        amount: BigInt(p.amount),
-        ownerPubkey: Field.fromHex(p.ownerPubkey),
-        auditorPubkey: Field.fromHex(p.auditorPubkey),
-        blinding: Field.fromHex(p.blinding),
-      },
-      auditorPubkeyBytes: p.auditorPubkeyBytes ? bytesFromHex(p.auditorPubkeyBytes) : undefined,
+    const note: Note = {
+      amount: BigInt(p.amount),
+      ownerPubkey: Field.fromHex(p.ownerPubkey),
+      auditorPubkey: Field.fromHex(p.auditorPubkey),
+      blinding: Field.fromHex(p.blinding),
     };
+    const auditorPubkeyBytes = p.auditorPubkeyBytes ? bytesFromHex(p.auditorPubkeyBytes) : undefined;
+    // The sender authored this payload, so reject a note whose auditor key bytes
+    // don't hash to the auditor field committed on-chain — otherwise a malicious
+    // sender could make the recipient seal disclosures to the wrong auditor.
+    if (auditorPubkeyBytes && !auditorPubkeyToField(auditorPubkeyBytes).equals(note.auditorPubkey)) {
+      return null;
+    }
+    return { note, auditorPubkeyBytes };
   } catch {
     return null;
   }

@@ -31,3 +31,21 @@ describe("Field", () => {
     expect(() => Field.fromHex("0xabcd")).toThrow();
   });
 });
+
+describe("Field.fromBytesLe", () => {
+  it("empty slice -> 0", () => {
+    expect(Field.fromBytesLe(new Uint8Array(0)).equals(Field.zero())).toBe(true);
+  });
+  it("single byte = value", () => {
+    expect(Field.fromBytesLe(new Uint8Array([0x61])).equals(Field.fromU64(0x61n))).toBe(true);
+  });
+  it("byte order is little-endian: [0x01, 0x02] -> 0x0201", () => {
+    expect(Field.fromBytesLe(new Uint8Array([0x01, 0x02])).equals(Field.fromU64(0x0201n))).toBe(true);
+  });
+  it("31 bytes of 0xff fits without reduction", () => {
+    const v = Field.fromBytesLe(new Uint8Array(31).fill(0xff));
+    // (1 << 248) - 1
+    const expected = (1n << 248n) - 1n;
+    expect(v.equals(new Field(expected))).toBe(true);
+  });
+});

@@ -1,0 +1,5 @@
+build/
+*.wtns
+*.zkey
+*.ptau
+*_js/

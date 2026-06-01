@@ -84,6 +84,19 @@ describe("RelayerService", () => {
     ).rejects.toBeInstanceOf(RelayerError);
   });
 
+  it("rejects non-numeric fee or amount with RelayerError, not a raw throw", async () => {
+    const svc = new RelayerService(
+      { nearAccountId: "relayer.near", feeUsdcBase: 500_000n },
+      new FakeSubmitter()
+    );
+    await expect(svc.submit(baseReq({ relayerFee: "abc" }))).rejects.toBeInstanceOf(
+      RelayerError
+    );
+    await expect(
+      svc.submit(baseReq({ relayerFee: "500000", amount: "not-a-number" }))
+    ).rejects.toBeInstanceOf(RelayerError);
+  });
+
   it("rejects empty proof bytes", async () => {
     const svc = new RelayerService(
       { nearAccountId: "relayer.near", feeUsdcBase: 500_000n },

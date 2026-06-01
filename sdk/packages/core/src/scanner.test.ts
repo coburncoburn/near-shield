@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { generateKeyPair, sealTo } from "./encrypt.js";
+import { generateKeyPair, sealTo, SEAL_CONTEXT_NOTE } from "./encrypt.js";
 import { Field } from "./field.js";
 import { encodeNotePayload, scanNotes, type NoteCiphertext } from "./scanner.js";
 
 function makeCt(recipientPub: Uint8Array, note: Parameters<typeof encodeNotePayload>[0], leafIndex: bigint): NoteCiphertext {
-  return { leafIndex, sealed: sealTo(recipientPub, encodeNotePayload(note)) };
+  return { leafIndex, sealed: sealTo(recipientPub, encodeNotePayload(note), SEAL_CONTEXT_NOTE) };
 }
 
 describe("scanner", () => {
@@ -65,8 +65,47 @@ describe("scanner", () => {
       blinding: Field.fromU64(1),
     };
     const ct = makeCt(me.publicKey, note, 0n);
-    ct.sealed[60] ^= 0xff;
+    ct.sealed[80] ^= 0xff; // corrupt the ciphertext region (eph+commit+nonce = 76)
     expect(scanNotes(me.privateKey, [ct])).toHaveLength(0);
+  });
+
+  it("a poisoned ephemeral key in one ciphertext does not abort the batch", () => {
+    // An attacker can post a log entry whose ephemeral pubkey is a low-order
+    // point; x25519 shared-secret derivation throws on it. The scanner must
+    // skip that entry and still recover legitimate notes, or one malicious log
+    // halts scanning for everyone.
+    const me = generateKeyPair();
+    const note = {
+      amount: 42n,
+      ownerPubkey: Field.fromU64(1),
+      auditorPubkey: Field.fromU64(1),
+      blinding: Field.fromU64(1),
+    };
+    const poison: NoteCiphertext = {
+      leafIndex: 0n,
+      sealed: new Uint8Array(32 + 32 + 12 + 16 + 1), // valid length, all-zero ephemeral pubkey
+    };
+    const good = makeCt(me.publicKey, note, 1n);
+    const found = scanNotes(me.privateKey, [poison, good]);
+    expect(found).toHaveLength(1);
+    expect(found[0].note.amount).toBe(42n);
+    expect(found[0].leafIndex).toBe(1n);
+  });
+
+  it("drops a note whose auditor pubkey bytes don't match the committed field", () => {
+    // A malicious sender could bind auditor X in the commitment (the field) but
+    // attach auditor Y's bytes, so the recipient would later seal disclosures to
+    // the wrong auditor. The scanner must reject such inconsistent notes.
+    const me = generateKeyPair();
+    const auditor = generateKeyPair();
+    const note = {
+      amount: 5n,
+      ownerPubkey: Field.fromU64(1),
+      auditorPubkey: Field.fromU64(999), // != auditorPubkeyToField(auditor.publicKey)
+      blinding: Field.fromU64(1),
+    };
+    const sealed = sealTo(me.publicKey, encodeNotePayload(note, auditor.publicKey), SEAL_CONTEXT_NOTE);
+    expect(scanNotes(me.privateKey, [{ leafIndex: 0n, sealed }])).toHaveLength(0);
   });
 
   it("re-scanning the same ciphertexts is idempotent", () => {

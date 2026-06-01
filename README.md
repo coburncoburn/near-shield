@@ -4,17 +4,21 @@ Privacy-preserving USDC pool on NEAR with per-user auditor view keys.
 
 See [`docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md`](docs/superpowers/specs/2026-05-24-near-shielded-pool-design.md) for the design and [`docs/superpowers/plans/2026-05-24-near-shielded-pool.md`](docs/superpowers/plans/2026-05-24-near-shielded-pool.md) for the implementation plan.
 
-## Status: PROTOTYPE -- DEPLOYMENT GATED
+## Status: SANDBOX-READY -- NOT MAINNET-READY
 
-Most safety preconditions are in place, but the repository is **not ready for a funds-bearing deployment** until the production-readiness gate passes:
+The production-readiness gate now passes for sandbox deployments:
 
 ```sh
 ./scripts/check-production-readiness.sh
 ```
 
-Remaining release blocker:
+The prover (`SnarkjsProver`, in-process snarkjs) proves real `deposit`, `transfer`, and `withdraw` Groth16 circuits using NEAR's `alt_bn128` host functions. Proof generation and the verify-via-contract host-function test pass in any environment.
 
-1. **Real shielded-pool prover.** The contract has real Groth16 verification plumbing through NEAR's `alt_bn128` host functions, but `tools/prover` currently proves only a reference `mul` circuit. Production requires proof generation for the actual `deposit`, `transfer`, and `withdraw` circuits, with proving/verifying keys generated from those exact constraints.
+> **Sandbox only — never use with real funds.** This prototype has not undergone circuit soundness review, a trusted-setup ceremony, or an external security audit. See `docs/superpowers/specs/2026-05-26-real-groth16-prover-e2e.md` for the path-to-production gates that remain before any mainnet deployment.
+
+Note: the near-workspaces sandbox tests (`contract/tests/integration.rs` and the real-proof `contract/tests/e2e_real_proofs.rs`) deploy the contract to a local NEAR sandbox (neard 2.11.0, bundled by near-workspaces 0.22) and drive the full on-chain deposit/withdraw/transfer flow — `e2e_real_proofs` does so with real Groth16 proofs verified via `alt_bn128`. They pass locally and can be skipped with `SKIP_NEAR_INTEGRATION=1` (as CI does); proof generation and contract-level verifier tests pass regardless.
+
+Deploy note: since Rust 1.87 the `wasm32-unknown-unknown` target emits bulk-memory ops (`memory.copy`/`memory.fill`) from precompiled std, which the NEAR runtime rejects at deploy with `PrepareError(Deserialization)`. The deployable artifact must be produced with `wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering` to lower them to MVP; the production gate now validates this.
 
 What **is** in place:
 
@@ -26,6 +30,36 @@ What **is** in place:
 - Failed-payout recovery (`unclaimed_payouts` book + `claim()`) so a failed FT transfer after the nullifier is spent doesn't lose funds
 - Input validation hardening (size bounds, named-field hex parsing, fuzz/property tests)
 - Auditor selective-disclosure design with per-user pubkey, lossless round-trip through note ciphertexts
+
+## Try the demo (sandbox only)
+
+`@shielded-near/demo` drives a full real-client flow against a local near-workspaces sandbox: it deploys the real `groth16-verifier` pool WASM + a vendored NEP-141 (`mock-ft`), creates Alice/Bob/relayer accounts, generates real Groth16 proofs via the in-process `SnarkjsProver`, and submits them through the TS SDK.
+
+> **Current state:** the demo runs the full deposit → transfer → withdraw flow end-to-end with real Groth16 proofs against a near-workspaces sandbox, and asserts Bob's on-chain `ft_balance_of` increased by `60 - relayerFee`. The view_ct binding uses NEAR's `keccak256` host fn — see `docs/superpowers/specs/2026-05-28-view-ct-binding-keccak.md`.
+
+### Build prereqs (one-time)
+
+```sh
+cargo build -p shielded-pool --target wasm32-unknown-unknown --release --no-default-features --features groth16-verifier
+./scripts/check-production-readiness.sh    # produces target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
+cargo build -p mock-ft --target wasm32-unknown-unknown --release --no-default-features
+wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering \
+  target/wasm32-unknown-unknown/release/mock_ft.wasm \
+  -o target/wasm32-unknown-unknown/release/mock_ft.opt.wasm
+pnpm --filter @shielded-near/circom build  # compile circom circuits → build/*.r1cs + *_js/*.wasm
+bash circom/scripts/dev-setup.sh           # generate DEV proving/verifying keys (Sub-project C produces real keys)
+pnpm install
+```
+
+The prover is in-process `SnarkjsProver` (no separate binary). `wasm-opt` is required (used by `check-production-readiness.sh`); install via your OS package manager or from the [binaryen releases](https://github.com/WebAssembly/binaryen/releases).
+
+`near-workspaces@4.0.0` ships a `neard` that is missing host functions required by `near-sdk 5.5`. The demo uses `near-workspaces` 0.22 (Rust crate), which bundles neard 2.11.0 and does not have this problem. If you see missing-host-function errors from the TS sandbox, set `SANDBOX_ARTIFACT_URL` to a neard 2.7.0 (or later) tarball before running `pnpm install`, or run `pnpm rebuild near-sandbox` with that env var set.
+
+### Run
+
+```sh
+pnpm --filter @shielded-near/demo demo
+```
 
 ## Layout
 
@@ -39,21 +73,96 @@ What **is** in place:
 ## Test status
 
 - `cargo test -p shielded-pool --lib` -- 66 passing tests + 2 ignored vector dumps
-- `cargo test -p shielded-pool --tests` -- 12 passing property/verifier tests + 1 environment-gated near-workspaces smoke + 1 ignored prover round-trip
+- `cargo test -p shielded-pool --tests` -- 14 passing property/verifier + near-workspaces sandbox tests (incl. real-proof deposit/withdraw/transfer) + 1 ignored prover round-trip; sandbox tests skippable via `SKIP_NEAR_INTEGRATION=1`
 - `nargo test --workspace` (in `circuits/`) -- 22 tests
-- `pnpm -r test` -- core 39, sdk 22, auditor 7, relayer 6 = 74 tests
+- `pnpm -r test` -- core 55, sdk 53, auditor 7, relayer 7 = 122 tests
 - `npm test` (in `tools/superpowers-validate/`) -- 16 tests
 
-Total: **190 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips and 1 environment-gated near-workspaces smoke.** CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
+Total: **240 passing tests across four layers, with 3 intentionally ignored diagnostics/round-trips.** The two near-workspaces sandbox tests now deploy to and pass against the bundled neard sandbox; CI skips the sandbox portion via `SKIP_NEAR_INTEGRATION=1`. CI runs contract tests, deploy-safety checks, circuit tests, TypeScript tests, and spec validation on push (`.github/workflows/ci.yml`); the full production-readiness gate must still pass before any deployment.
+
+## Trusted-setup ceremony
+
+Before mainnet deployment, the proving/verifying keys must come from a real
+multi-party computation (MPC) ceremony — the DEV keys generated by
+`circom/scripts/dev-setup.sh` are **not** safe for production.
+
+The ceremony tooling and step-by-step runbook live in `ceremony/`:
+
+- **[`ceremony/RUNBOOK.md`](ceremony/RUNBOOK.md)** — how to run the real ceremony
+  (Phase 1 Powers of Tau import, per-circuit Phase 2 MPC, beacon, finalize,
+  verification, and handoff to deployment).
+- **Dev dry-run** (tests the pipeline; keys are NON-PRODUCTION):
+
+  ```sh
+  bash ceremony/scripts/run-dev-ceremony.sh
+  ```
+
+- **Fingerprint guard** — `scripts/check-production-readiness.sh` hard-rejects
+  DEV key fingerprints when `DEPLOY_VK_DIR` is set, so DEV keys can never
+  silently slip into a production deployment:
+
+  ```sh
+  DEPLOY_VK_DIR="$(pwd)/ceremony/out" bash scripts/check-production-readiness.sh
+  ```
+
+  > **Note:** this command must be run from a **fully-built state** — it also
+  > runs the other production-readiness gates (optimised WASM check, bulk-memory
+  > feature validation, etc.), not just the VK fingerprint check.  Run the build
+  > prereqs first (see above) before invoking with `DEPLOY_VK_DIR`.
+
+The fast dev loop and all tests continue to use the DEV keys from
+`circom/scripts/dev-setup.sh`; only the production deploy path requires the
+real ceremony keys.
+
+## Deploying
+
+The deploy tooling lives in `deploy/`.  The operator runbook is
+[`deploy/DEPLOY-RUNBOOK.md`](deploy/DEPLOY-RUNBOOK.md).
+
+**Sandbox validation** (runs the full 33-test suite including a near-workspaces
+sandbox deploy+verify):
+
+```sh
+pnpm --filter @shielded-near/deploy test
+```
+
+**Mainnet** is operator-driven: the tool emits a `near contract deploy …` command
+that the operator reviews and then broadcasts manually via near-cli-rs with a
+ledger or multisig signer.  It **never holds a mainnet signing key** and **never
+broadcasts**.
+
+Mainnet emit is **gated** on five mandatory preconditions (the tool refuses
+without `--confirm-mainnet`, and even then it prints the checklist for the
+operator to re-verify before broadcasting):
+
+1. Real trusted-setup ceremony completed + VKs published (see [`ceremony/RUNBOOK.md`](ceremony/RUNBOOK.md))
+2. Independent circuit soundness review complete
+3. External security audit complete
+4. Canonical mainnet USDC token id verified from an authoritative source
+5. Owner = ledger or multisig account (not a hot key)
+
+The tool also refuses DEV verifying keys (byte-level fingerprint check, any
+source directory) and the mock-verifier WASM via `scripts/check-production-readiness.sh`,
+which is always run for mainnet and testnet and cannot be skipped.
+
+See [`deploy/DEPLOY-RUNBOOK.md`](deploy/DEPLOY-RUNBOOK.md) for the full
+preconditions checklist, config format, emit command, review checklist, broadcast
+instructions, and post-deploy verification steps.
 
 ## Production Gate
 
-The production-readiness script is intentionally strict and currently fails on
-the release blocker above. It fails unless:
+The production-readiness script verifies:
 
-- the SDK/prover path can generate real 256-byte proofs for `deposit`, `transfer`, and `withdraw`
 - the production verifier feature compiles for `wasm32-unknown-unknown`
 - default WASM builds with mock verifier semantics are rejected
 - the optimised WASM artifact exists and fits under NEAR's deploy transaction limit
+- the optimised WASM uses only NEAR-deployable wasm features (no bulk-memory; lowered to MVP)
+- deploy VKs do not match the DEV key fingerprints baked into the script (guard fires once `DEPLOY_VK_DIR` is set in Sub-project C)
 
-Until that script passes, use only local sandbox deployments and never deposit real funds.
+**Remaining path-to-mainnet gates** (see spec for details):
+
+1. Independent circuit soundness review
+2. Trusted-setup ceremony for production proving/verifying keys
+3. External security audit of contract + SDK + prover
+
+Until those gates pass, use only local sandbox deployments and **never deposit real funds**.

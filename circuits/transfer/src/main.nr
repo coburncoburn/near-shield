@@ -64,6 +64,10 @@ fn main(
     assert(nullifier_of(spending_key, c_in0, in0_leaf_index) == nullifier0);
     assert(nullifier_of(spending_key, c_in1, in1_leaf_index) == nullifier1);
 
+    // The two inputs must be distinct notes; equal nullifiers would double-count
+    // one note. Matches the arkworks prover and the contract's n0 != n1 check.
+    assert(nullifier0 != nullifier1);
+
     // Merkle inclusion for both input commitments under the same root.
     verify_merkle_proof(merkle_root, c_in0, in0_leaf_index, in0_path);
     verify_merkle_proof(merkle_root, c_in1, in1_leaf_index, in1_path);
@@ -83,6 +87,16 @@ fn main(
     };
     assert(commit_note(out0) == commitment_out0);
     assert(commit_note(out1) == commitment_out1);
+
+    // Range-check all amounts to 128 bits BEFORE the conservation check.
+    // Conservation is field arithmetic; without bounding the operands an
+    // attacker could pick a huge out0 and an out1 that makes the sum wrap the
+    // BN254 modulus back to the input total ("wraparound mint"). Matches the
+    // arkworks prover's `enforce_bits(_, 128)` (tools/prover).
+    in0_amount.assert_max_bit_size::<128>();
+    in1_amount.assert_max_bit_size::<128>();
+    out0_amount.assert_max_bit_size::<128>();
+    out1_amount.assert_max_bit_size::<128>();
 
     // Value conservation.
     assert(in0_amount + in1_amount == out0_amount + out1_amount);
@@ -177,6 +191,66 @@ fn value_conservation_violation_fails() {
         sk,
         150, 100, 3,
         50, owner, 4,
+        13, 14,
+    );
+}
+
+#[test(should_fail)]
+fn same_input_note_fails() {
+    // Both inputs are the same note (equal nullifiers): double-counting one
+    // note. Must reject.
+    let sk: Field = 7;
+    let owner = owner_pubkey_of(sk);
+    let auditor: Field = 22;
+    let recip_auditor: Field = 33;
+    let in_note = Note { amount: 60, owner_pubkey: owner, auditor_pubkey: auditor, blinding: 1 };
+    let c_in = commit_note(in_note);
+    let n = nullifier_of(sk, c_in, 0);
+    let (root, path0, _path1) = tree_with_two_leaves::<MERKLE_DEPTH>(c_in, c_in);
+    let out0 = Note { amount: 120, owner_pubkey: 100, auditor_pubkey: recip_auditor, blinding: 3 };
+    let out1 = Note { amount: 0, owner_pubkey: owner, auditor_pubkey: recip_auditor, blinding: 4 };
+    let c_out0 = commit_note(out0);
+    let c_out1 = commit_note(out1);
+    main(
+        root, n, n, c_out0, c_out1, auditor, recip_auditor, 13, 14,
+        60, owner, 1, 0, path0,
+        60, owner, 1, 0, path0,
+        sk,
+        120, 100, 3,
+        0, owner, 4,
+        13, 14,
+    );
+}
+
+#[test(should_fail)]
+fn wraparound_mint_fails() {
+    // out0 exceeds 128 bits; out1 is chosen so the FIELD sum still equals the
+    // input total (100). Only the range check stands between this and minting
+    // value via modular wraparound. Must reject.
+    let sk: Field = 7;
+    let owner = owner_pubkey_of(sk);
+    let auditor: Field = 22;
+    let recip_auditor: Field = 33;
+    let in0 = Note { amount: 60, owner_pubkey: owner, auditor_pubkey: auditor, blinding: 1 };
+    let in1 = Note { amount: 40, owner_pubkey: owner, auditor_pubkey: auditor, blinding: 2 };
+    let c_in0 = commit_note(in0);
+    let c_in1 = commit_note(in1);
+    let n0 = nullifier_of(sk, c_in0, 0);
+    let n1 = nullifier_of(sk, c_in1, 1);
+    let (root, path0, path1) = tree_with_two_leaves::<MERKLE_DEPTH>(c_in0, c_in1);
+    let huge: Field = 0x100000000000000000000000000000000; // 2^128 (needs 129 bits)
+    let out1_amt: Field = 100 - huge;
+    let out0 = Note { amount: huge, owner_pubkey: 100, auditor_pubkey: recip_auditor, blinding: 3 };
+    let out1 = Note { amount: out1_amt, owner_pubkey: owner, auditor_pubkey: recip_auditor, blinding: 4 };
+    let c_out0 = commit_note(out0);
+    let c_out1 = commit_note(out1);
+    main(
+        root, n0, n1, c_out0, c_out1, auditor, recip_auditor, 13, 14,
+        60, owner, 1, 0, path0,
+        40, owner, 2, 1, path1,
+        sk,
+        huge, 100, 3,
+        out1_amt, owner, 4,
         13, 14,
     );
 }

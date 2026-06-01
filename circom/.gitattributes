@@ -1,0 +1,3 @@
+# Treat committed binary fixtures as binary: no line-ending normalization,
+# and git diff will label them as binary rather than showing garbled output.
+fixtures/**/*.bin binary

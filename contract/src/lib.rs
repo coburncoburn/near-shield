@@ -1,5 +1,5 @@
 use near_sdk::store::LookupMap;
-use near_sdk::{near, AccountId, PanicOnDefault};
+use near_sdk::{env, near, require, AccountId, PanicOnDefault};
 
 pub mod deposit;
 pub mod events;
@@ -36,6 +36,12 @@ pub struct Contract {
     /// Recovery book: USDC owed to accounts whose `ft_transfer` failed during
     /// a withdrawal. Claimable via `claim()`.
     pub unclaimed_payouts: LookupMap<AccountId, u128>,
+    /// Emergency stop. When true, deposit/transfer/withdraw are rejected.
+    /// `claim()` is intentionally NOT gated so users can still recover funds.
+    /// NOTE: there is deliberately no verifying-key rotation — a mutable VK
+    /// would let a compromised owner install a verifier that accepts forged
+    /// proofs (a fund-theft vector). Fixing a circuit bug means a redeploy.
+    pub paused: bool,
 }
 
 #[near]
@@ -58,7 +64,22 @@ impl Contract {
             vk_transfer,
             vk_withdraw,
             unclaimed_payouts: LookupMap::new(b"u"),
+            paused: false,
         }
+    }
+
+    /// Owner-only emergency stop. Halts deposit/transfer/withdraw (claim stays
+    /// open so funds owed to users remain recoverable).
+    pub fn set_paused(&mut self, paused: bool) {
+        require!(
+            env::predecessor_account_id() == self.owner,
+            "only owner may pause"
+        );
+        self.paused = paused;
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
     }
 
     pub fn owner(&self) -> AccountId {

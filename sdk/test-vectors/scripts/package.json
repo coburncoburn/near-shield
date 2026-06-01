@@ -1,0 +1,14 @@
+{
+  "name": "@shielded-near/test-vectors-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@noble/hashes": "^1.3.0",
+    "@shielded-near/core": "workspace:*",
+    "@shielded-near/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

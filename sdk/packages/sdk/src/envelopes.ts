@@ -82,8 +82,8 @@ export function toDepositArgs(tx: BuiltTx): DepositArgs {
     commitment: pickString(pi, "commitment"),
     amount: pickString(pi, "amount"),
     auditor_pubkey: pickString(pi, "auditorPubkey"),
-    view_ct: encodeCt(tx.viewCiphertexts[0]),
-    note_ct: encodeCt(tx.noteCiphertexts[0]),
+    view_ct: encodeCiphertext(tx.viewCiphertexts[0]),
+    note_ct: encodeCiphertext(tx.noteCiphertexts[0]),
     proof: Array.from(tx.proof),
   };
 }
@@ -125,8 +125,8 @@ export function toTransferArgs(tx: BuiltTx): TransferArgs {
     commitments,
     auditor_pubkey: pickString(pi, "auditorPubkey"),
     recipient_auditor_pubkey: pickString(pi, "recipientAuditorPubkey"),
-    view_cts: [encodeCt(tx.viewCiphertexts[0]), encodeCt(tx.viewCiphertexts[1])],
-    note_cts: [encodeCt(tx.noteCiphertexts[0]), encodeCt(tx.noteCiphertexts[1])],
+    view_cts: [encodeCiphertext(tx.viewCiphertexts[0]), encodeCiphertext(tx.viewCiphertexts[1])],
+    note_cts: [encodeCiphertext(tx.noteCiphertexts[0]), encodeCiphertext(tx.noteCiphertexts[1])],
     proof: Array.from(tx.proof),
   };
 }
@@ -140,12 +140,18 @@ export function toWithdrawArgs(tx: BuiltTx): WithdrawArgs {
     recipient: pickString(pi, "recipient"),
     amount: pickString(pi, "amount"),
     auditor_pubkey: pickString(pi, "auditorPubkey"),
-    view_ct: encodeCt(tx.viewCiphertexts[0]),
+    view_ct: encodeCiphertext(tx.viewCiphertexts[0]),
     relayer: pickString(pi, "relayer"),
     relayer_fee: pickString(pi, "relayerFee"),
     proof: Array.from(tx.proof),
   };
 }
+
+// The pool charges storage rent on state-mutating calls (see
+// contract/src/storage.rs): transfer reserves 1024 bytes (~0.0102 NEAR) and
+// withdraw 256 bytes (~0.00256 NEAR). Excess is refunded on success. We attach
+// a 1 NEAR margin so callers don't have to know byte counts.
+const ONE_NEAR_YOCTO = (10n ** 24n).toString();
 
 /** Build the function-call envelope for a transfer (caller submits directly). */
 export function toTransferCall(tx: BuiltTx, poolAccountId: string): NearFunctionCall {
@@ -153,8 +159,11 @@ export function toTransferCall(tx: BuiltTx, poolAccountId: string): NearFunction
     contractId: poolAccountId,
     methodName: "transfer",
     args: toTransferArgs(tx) as unknown as Record<string, unknown>,
-    attachedDeposit: "0",
-    gas: ONE_HUNDRED_TGAS,
+    attachedDeposit: ONE_NEAR_YOCTO,
+    // Groth16 verification (two pairings on the alt_bn128 host fns) plus state
+    // writes don't fit in 100 Tgas. 300 Tgas (NEAR's per-tx max) matches the
+    // contract integration tests and the relayer's withdraw budget.
+    gas: THREE_HUNDRED_TGAS,
   };
 }
 
@@ -164,8 +173,8 @@ export function toWithdrawCall(tx: BuiltTx, poolAccountId: string): NearFunction
     contractId: poolAccountId,
     methodName: "withdraw",
     args: toWithdrawArgs(tx) as unknown as Record<string, unknown>,
-    attachedDeposit: "0",
-    gas: ONE_HUNDRED_TGAS,
+    attachedDeposit: ONE_NEAR_YOCTO,
+    gas: THREE_HUNDRED_TGAS,
   };
 }
 
@@ -193,11 +202,9 @@ function pickStringPair(pi: BuiltTx["publicInputs"], key: string): [string, stri
   return [v[0], v[1]];
 }
 
-/**
- * Ciphertexts are sent over JSON. We use hex (chosen for round-trip simplicity
- * and to avoid base64 confusion across platforms). The Rust contract treats
- * them as opaque `String`s and just hashes them into the public input.
- */
-function encodeCt(b: Uint8Array): string {
+/** Ciphertexts cross the JSON boundary as "0x"+hex. The contract treats the
+ *  resulting string as opaque and hashes its bytes into the proof's public
+ *  input, so any code deriving view_ct_hash MUST hash these same bytes. */
+export function encodeCiphertext(b: Uint8Array): string {
   return "0x" + Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
 }

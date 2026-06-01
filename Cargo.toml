@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contract", "tools/prover"]
+members = ["contract", "contracts/mock-ft"]
 
 [profile.release]
 codegen-units = 1
@@ -18,7 +18,8 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 near-sdk = "5.5"
-near-workspaces = "0.15"
+near-contract-standards = "5.5"
+near-workspaces = "0.22"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

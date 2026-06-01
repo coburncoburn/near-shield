@@ -1,9 +1,17 @@
 use crate::poseidon::{poseidon2, Field};
-use crate::storage::{require_storage_deposit, DEPOSIT_BYTES};
 use crate::verifier::{select_verifier, Verifier};
-use crate::{events, Contract, ContractExt};
+use crate::{events, Contract};
+use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{json_types::U128, near};
+
+// Imports needed only by the test/sandbox-only direct `deposit()` entry point
+// (gated below); absent from deployable builds along with the method itself.
+#[cfg(any(test, feature = "integration-testing"))]
+use crate::storage::{require_storage_deposit, DEPOSIT_BYTES};
+#[cfg(any(test, feature = "integration-testing"))]
+use crate::ContractExt;
+#[cfg(any(test, feature = "integration-testing"))]
+use near_sdk::near;
 
 pub fn parse_hex32(s: &str) -> Option<Field> {
     let trimmed = s.trim_start_matches("0x");
@@ -40,6 +48,15 @@ pub fn hash_bytes_to_field(b: &[u8]) -> Field {
     acc
 }
 
+/// Reduces arbitrary bytes to a Field via `keccak256` then little-endian
+/// truncation to 31 bytes (248 bits). Used for binding submitted ciphertexts
+/// into a proof's public input without paying in-WASM Poseidon over the full
+/// length. Cross-language vectors live in `sdk/test-vectors/view_ct_keccak.json`.
+pub fn keccak_to_field(b: &[u8]) -> Field {
+    let digest = near_sdk::env::keccak256(b);
+    Field::from_bytes_le(&digest[..31])
+}
+
 /// JSON payload the user attaches to a NEP-141 `ft_transfer_call(msg=...)`
 /// when depositing USDC into the shielded pool.
 #[derive(Serialize, Deserialize)]
@@ -61,6 +78,7 @@ impl Contract {
         use crate::validation::{
             check_ciphertext_bytes, check_proof_bytes, parse_hex32_or_panic,
         };
+        assert!(!self.paused, "contract is paused");
         check_proof_bytes(&args.proof);
         check_ciphertext_bytes(&args.view_ct, "view_ct");
         check_ciphertext_bytes(&args.note_ct, "note_ct");
@@ -71,7 +89,7 @@ impl Contract {
             commitment_field,
             Field::from_u128(args.amount.0),
             auditor_field,
-            hash_bytes_to_field(args.view_ct.as_bytes()),
+            keccak_to_field(args.view_ct.as_bytes()),
         ];
         assert!(
             select_verifier(&self.vk_deposit).verify(&args.proof, &pi),
@@ -84,14 +102,19 @@ impl Contract {
     }
 }
 
+// SECURITY: `deposit()` inserts a commitment with NO backing USDC transfer —
+// the deposit proof only attests commitment well-formedness (no secret, no
+// funds) and proving keys are public, so exposing this in production would let
+// anyone mint unbacked notes and drain the pool. The ONLY safe deposit path is
+// `ft_on_transfer` (ft.rs), which binds the amount to a real token transfer.
+// This direct entry point is therefore compiled ONLY for unit tests and the
+// sandbox `integration-testing` build (both use the permissive MockVerifier and
+// never hold real funds); it is absent from any deployable artifact.
+#[cfg(any(test, feature = "integration-testing"))]
 #[near]
 impl Contract {
-    /// Direct deposit (no FT transfer). Used by tests and by future variants
-    /// where the contract is funded out-of-band. The production deposit path
-    /// is `ft_on_transfer` in `ft.rs`, which calls `do_deposit` directly
-    /// because the FT-callback context doesn't carry the caller's
-    /// attached_deposit (storage is amortised by the FT layer's own deposit
-    /// requirement).
+    /// Direct deposit (no FT transfer). TEST/SANDBOX ONLY — see the security
+    /// note above. The production deposit path is `ft_on_transfer` in `ft.rs`.
     #[payable]
     pub fn deposit(
         &mut self,
@@ -226,5 +249,23 @@ mod tests {
         );
         let root = c.merkle_root();
         assert!(c.recent_roots.contains(&crate::deposit::parse_hex32(&root).unwrap()));
+    }
+
+    #[test]
+    fn keccak_to_field_vectors() {
+        let raw = include_str!("../../sdk/test-vectors/view_ct_keccak.json");
+        let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        for case in v["cases"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            let input_hex = case["input_hex"].as_str().unwrap().trim_start_matches("0x");
+            let input = hex::decode(input_hex).unwrap();
+            let expected_digest_hex = case["expected_digest_hex"].as_str().unwrap();
+            let got_digest = near_sdk::env::keccak256(&input);
+            let got_digest_hex = format!("0x{}", hex::encode(&got_digest));
+            assert_eq!(got_digest_hex, expected_digest_hex, "case {name} (digest)");
+            let expected_hex = case["expected_field_hex"].as_str().unwrap();
+            let got = super::keccak_to_field(&input);
+            assert_eq!(got.to_hex(), expected_hex, "case {name}");
+        }
     }
 }

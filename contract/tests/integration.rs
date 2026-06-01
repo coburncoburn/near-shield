@@ -39,7 +39,8 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
              Build it with: \
                cargo build -p shielded-pool --target wasm32-unknown-unknown \
                  --release --no-default-features --features integration-testing \
-               && wasm-opt -Oz --enable-bulk-memory --strip-debug --strip-producers \
+               && wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz \
+                 --strip-debug --strip-producers \
                  target/wasm32-unknown-unknown/release/shielded_pool.wasm \
                  -o target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm"
         )
@@ -73,6 +74,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "vk_transfer": vec![1u8, 2, 3],
             "vk_withdraw": vec![1u8, 2, 3],
         }))
+        .max_gas()
         .transact()
         .await?;
     assert!(init.is_success(), "init failed: {init:#?}");
@@ -90,6 +92,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "note_ct": "note_ct_payload",
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -131,6 +134,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(500_000),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -141,7 +145,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
     let logs = withdraw.logs();
     let saw_withdraw_event = logs
         .iter()
-        .any(|l| l.contains("\"event\":\"withdraw\"") && l.contains("bob"));
+        .any(|l| l.contains("\"event\":\"withdraw\"") && l.contains(bob.id().as_str()));
     assert!(saw_withdraw_event, "no withdraw event in logs: {logs:#?}");
 
     // Nullifier must be marked spent now.
@@ -166,6 +170,7 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(500_000),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
@@ -190,11 +195,162 @@ async fn deposit_and_withdraw_round_trip_via_real_contract() -> anyhow::Result<(
             "relayer_fee": U128(0),
             "proof": vec![1u8, 2, 3],
         }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?;
     assert!(bad_root.is_failure(), "stale root must reject");
 
     let _ = (owner, usdc);
+    Ok(())
+}
+
+/// The per-action storage deposit only needs to cover the bytes written; any
+/// excess attached must be refunded to the caller rather than retained.
+#[tokio::test]
+async fn deposit_refunds_excess_storage_deposit() -> anyhow::Result<()> {
+    if std::env::var("SKIP_NEAR_INTEGRATION").is_ok() {
+        return Ok(());
+    }
+    let pool_wasm = std::fs::read(POOL_WASM_PATH)
+        .map_err(|e| anyhow::anyhow!("missing pool wasm at {POOL_WASM_PATH}: {e}"))?;
+    let worker = near_workspaces::sandbox().await?;
+    let pool = worker.dev_deploy(&pool_wasm).await?;
+    let usdc = worker.dev_create_account().await?;
+    pool.call("new")
+        .args_json(json!({
+            "owner": pool.id(),
+            "usdc_token": usdc.id(),
+            "vk_deposit": vec![1u8, 2, 3],
+            "vk_transfer": vec![1u8, 2, 3],
+            "vk_withdraw": vec![1u8, 2, 3],
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice = worker.dev_create_account().await?;
+    let before = alice.view_account().await?.balance;
+    alice
+        .call(pool.id(), "deposit")
+        .args_json(json!({
+            "commitment": hex32(0x01),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "note_ct": "n",
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(near_workspaces::types::NearToken::from_near(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let after = alice.view_account().await?.balance;
+
+    // DEPOSIT_BYTES (512) costs ~0.005 NEAR; with the refund alice should be out
+    // only that plus gas. Without it she'd be down the full ~1 NEAR attached.
+    let spent = before.as_yoctonear() - after.as_yoctonear();
+    let cap = near_workspaces::types::NearToken::from_millinear(100).as_yoctonear();
+    assert!(
+        spent < cap,
+        "excess storage deposit not refunded: spent {spent} yoctoNEAR (cap {cap})"
+    );
+    Ok(())
+}
+
+/// Regression: a failed payout credits `unclaimed_payouts`; if `claim()` then
+/// also fails (recipient still unregistered with the FT contract), the funds
+/// MUST be re-credited by the recovery callback, not silently lost. Mirrors the
+/// recovery the withdraw path already has.
+#[tokio::test]
+async fn claim_re_credits_recovery_book_on_failed_payout() -> anyhow::Result<()> {
+    if std::env::var("SKIP_NEAR_INTEGRATION").is_ok() {
+        return Ok(());
+    }
+    let pool_wasm = std::fs::read(POOL_WASM_PATH)
+        .map_err(|e| anyhow::anyhow!("missing pool wasm at {POOL_WASM_PATH}: {e}"))?;
+    let worker = near_workspaces::sandbox().await?;
+    let pool = worker.dev_deploy(&pool_wasm).await?;
+    // Fake USDC: it has no `ft_transfer`, so every payout fails -> recovery path.
+    let usdc = worker.dev_create_account().await?;
+    pool.call("new")
+        .args_json(json!({
+            "owner": pool.id(),
+            "usdc_token": usdc.id(),
+            "vk_deposit": vec![1u8, 2, 3],
+            "vk_transfer": vec![1u8, 2, 3],
+            "vk_withdraw": vec![1u8, 2, 3],
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let one = near_workspaces::types::NearToken::from_near(1);
+
+    // Deposit to create a recent root (mock verifier accepts any non-empty proof).
+    let alice = worker.dev_create_account().await?;
+    alice
+        .call(pool.id(), "deposit")
+        .args_json(json!({
+            "commitment": hex32(0x01),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "note_ct": "n",
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(one)
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let root: String = pool.view("merkle_root").await?.json()?;
+
+    // Withdraw to bob; the payout ft_transfer fails, crediting unclaimed_payouts.
+    let bob = worker.dev_create_account().await?;
+    let relayer = worker.dev_create_account().await?;
+    relayer
+        .call(pool.id(), "withdraw")
+        .args_json(json!({
+            "merkle_root": root,
+            "nullifier": hex32(0xab),
+            "recipient": bob.id(),
+            "amount": U128(100_000_000),
+            "auditor_pubkey": hex32(0x02),
+            "view_ct": "v",
+            "relayer": relayer.id(),
+            "relayer_fee": U128(500_000),
+            "proof": vec![1u8, 2, 3],
+        }))
+        .deposit(one)
+        .max_gas()
+        .transact()
+        .await?;
+    let owed: U128 = pool
+        .view("unclaimed_payout_of")
+        .args_json(json!({ "account": bob.id() }))
+        .await?
+        .json()?;
+    assert_eq!(owed.0, 99_500_000, "failed withdraw payout should credit bob");
+
+    // bob claims; the fake USDC ft_transfer fails AGAIN. The recovery callback
+    // must restore the book entry rather than lose the funds.
+    bob.call(pool.id(), "claim")
+        .args_json(json!({}))
+        .max_gas()
+        .transact()
+        .await?;
+    let after: U128 = pool
+        .view("unclaimed_payout_of")
+        .args_json(json!({ "account": bob.id() }))
+        .await?
+        .json()?;
+    assert_eq!(
+        after.0, 99_500_000,
+        "failed claim must re-credit the recovery book, not lose funds"
+    );
     Ok(())
 }

@@ -1,0 +1,14 @@
+{
+  "planPath": "docs/superpowers/plans/2026-05-31-trusted-setup-ceremony.md",
+  "tasks": [
+    {"id": 16, "subject": "C-Task 0: Scaffold ceremony/ + shared lib + manifest helper", "status": "completed"},
+    {"id": 17, "subject": "C-Task 1: Phase-1 scripts (dev local + Perpetual-PoT import)", "status": "completed", "blockedBy": [16]},
+    {"id": 18, "subject": "C-Task 2: Phase-2 init + contributor scripts", "status": "completed", "blockedBy": [17]},
+    {"id": 19, "subject": "C-Task 3: Beacon + finalize + vk.bin via sdk adapter + manifest", "status": "completed", "blockedBy": [18]},
+    {"id": 20, "subject": "C-Task 4: verify-ceremony.sh standalone re-verification", "status": "completed", "blockedBy": [19]},
+    {"id": 21, "subject": "C-Task 5: run-dev-ceremony.sh dev dry-run driver", "status": "completed", "blockedBy": [20]},
+    {"id": 22, "subject": "C-Task 6: On-contract validation of ceremony output", "status": "completed", "blockedBy": [21]},
+    {"id": 23, "subject": "C-Task 7: Fingerprint-guard wiring + RUNBOOK + README", "status": "completed", "blockedBy": [22]}
+  ],
+  "lastUpdated": "2026-05-31T00:00:00Z"
+}

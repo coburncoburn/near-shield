@@ -3,6 +3,7 @@ import {
   encodeDisclosure,
   generateKeyPair,
   sealTo,
+  SEAL_CONTEXT_VIEW,
   type ViewDisclosure,
 } from "@shielded-near/core";
 import { AuditorIndex, type RawEvent } from "./indexer.js";
@@ -41,7 +42,7 @@ describe("AuditorIndex", () => {
     const auditor = generateKeyPair();
     const idx = new AuditorIndex(auditor.privateKey);
     const d = disclosure("deposit", ownerAlice, ownerAlice, ["100"]);
-    const ct = sealTo(auditor.publicKey, encodeDisclosure(d));
+    const ct = sealTo(auditor.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
     expect(idx.ingest([event(1, "tx1", "deposit", [ct])])).toBe(1);
     expect(idx.getAll()).toHaveLength(1);
     expect(idx.getAll()[0].disclosure).toEqual(d);
@@ -52,7 +53,7 @@ describe("AuditorIndex", () => {
     const other = generateKeyPair();
     const idx = new AuditorIndex(mine.privateKey);
     const d = disclosure("deposit", ownerAlice, ownerAlice, ["100"]);
-    const ct = sealTo(other.publicKey, encodeDisclosure(d));
+    const ct = sealTo(other.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
     expect(idx.ingest([event(1, "tx1", "deposit", [ct])])).toBe(0);
     expect(idx.getAll()).toHaveLength(0);
   });
@@ -63,7 +64,7 @@ describe("AuditorIndex", () => {
     const a = disclosure("transfer", ownerAlice, ownerBob, ["60"]);
     const b = disclosure("transfer", ownerBob, ownerCarol, ["40"]);
     const c = disclosure("deposit", ownerCarol, ownerCarol, ["100"]);
-    const cts = [a, b, c].map((d) => sealTo(auditor.publicKey, encodeDisclosure(d)));
+    const cts = [a, b, c].map((d) => sealTo(auditor.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW));
     idx.ingest([
       event(1, "tx1", "transfer", [cts[0]]),
       event(2, "tx2", "transfer", [cts[1]]),
@@ -80,8 +81,8 @@ describe("AuditorIndex", () => {
     const auditorB = generateKeyPair();
     const idx = new AuditorIndex(auditorA.privateKey);
     const d = disclosure("transfer", ownerAlice, ownerBob, ["60"]);
-    const ctA = sealTo(auditorA.publicKey, encodeDisclosure(d));
-    const ctB = sealTo(auditorB.publicKey, encodeDisclosure(d));
+    const ctA = sealTo(auditorA.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
+    const ctB = sealTo(auditorB.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
     expect(idx.ingest([event(1, "tx", "transfer", [ctA, ctB])])).toBe(1);
     expect(idx.getAll()).toHaveLength(1);
   });
@@ -90,7 +91,7 @@ describe("AuditorIndex", () => {
     const auditor = generateKeyPair();
     const idx = new AuditorIndex(auditor.privateKey);
     const d = disclosure("deposit", ownerAlice, ownerAlice, ["100"]);
-    const ct = sealTo(auditor.publicKey, encodeDisclosure(d));
+    const ct = sealTo(auditor.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
     expect(idx.verifyDisclosure(ct, d)).toBe(true);
     const tampered = { ...d, amounts: ["999"] };
     expect(idx.verifyDisclosure(ct, tampered)).toBe(false);
@@ -104,7 +105,7 @@ describe("AuditorIndex", () => {
     const auditor = generateKeyPair();
     const idx = new AuditorIndex(auditor.privateKey);
     const d = disclosure("deposit", ownerAlice, ownerAlice, ["100"]);
-    const ct = sealTo(auditor.publicKey, encodeDisclosure(d));
+    const ct = sealTo(auditor.publicKey, encodeDisclosure(d), SEAL_CONTEXT_VIEW);
     idx.ingest([event(1, "tx", "deposit", [ct])]);
     idx.ingest([event(1, "tx", "deposit", [ct])]);
     expect(idx.getAll()).toHaveLength(2);

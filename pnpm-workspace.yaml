@@ -1,6 +1,16 @@
 packages:
   - "sdk/packages/*"
+  - "sdk/test-vectors/scripts"
+  - "demo"
+  - "circom"
+  - "deploy"
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
+  near-sandbox: true
+  near-workspaces: true
+  secp256k1: true
 onlyBuiltDependencies:
   - esbuild
+  - near-sandbox
+  - near-workspaces
+  - secp256k1

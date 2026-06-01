@@ -18,7 +18,7 @@ export function hashBytesToField(b: Uint8Array): Field {
   if (b.length === 0) return Field.zero();
   const chunks: Field[] = [];
   for (let i = 0; i < b.length; i += 31) {
-    chunks.push(fieldFromLeBytes(b.subarray(i, i + 31)));
+    chunks.push(Field.fromBytesLe(b.subarray(i, i + 31)));
   }
   if (chunks.length === 1) return chunks[0];
   let acc = chunks[0];
@@ -26,13 +26,4 @@ export function hashBytesToField(b: Uint8Array): Field {
     acc = poseidon2(acc, chunks[i]);
   }
   return acc;
-}
-
-function fieldFromLeBytes(bytes: Uint8Array): Field {
-  // Little-endian: first byte is the least significant.
-  let v = 0n;
-  for (let i = bytes.length - 1; i >= 0; i--) {
-    v = (v << 8n) | BigInt(bytes[i]);
-  }
-  return new Field(v);
 }

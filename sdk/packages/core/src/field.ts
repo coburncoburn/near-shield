@@ -53,4 +53,16 @@ export class Field {
   equals(other: Field): boolean {
     return this.value === other.value;
   }
+
+  /** Reads `bytes` little-endian (byte 0 = LSB) into a Field. Accepts any
+   *  length; values whose magnitude exceeds the BN254 modulus are reduced
+   *  (Field's constructor handles that). Matches Rust
+   *  `contract::poseidon::Field::from_bytes_le`. */
+  static fromBytesLe(bytes: Uint8Array): Field {
+    let v = 0n;
+    for (let i = bytes.length - 1; i >= 0; i--) {
+      v = (v << 8n) | BigInt(bytes[i]);
+    }
+    return new Field(v);
+  }
 }

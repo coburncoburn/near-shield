@@ -19,12 +19,14 @@ jobs:
           workspaces: contract
       - name: Run unit tests
         run: cargo test -p shielded-pool --lib
-      - name: Build integration-test WASM
+      - name: Build integration-test WASM (compilation check)
+        # The near-workspaces sandbox portion of integration.rs / e2e_real_proofs.rs
+        # is skipped here via SKIP_NEAR_INTEGRATION, so this only verifies the
+        # integration-testing feature compiles to wasm. Local sandbox runs build
+        # the deployable artifact via wasm-opt (see the test's error guidance).
         run: |
           cargo build -p shielded-pool --target wasm32-unknown-unknown \
             --release --no-default-features --features integration-testing
-          cp target/wasm32-unknown-unknown/release/shielded_pool.wasm \
-            target/wasm32-unknown-unknown/release/shielded_pool.integration.opt.wasm
       - name: Run integration and verifier tests
         run: SKIP_NEAR_INTEGRATION=1 cargo test -p shielded-pool --tests
 
@@ -92,10 +94,29 @@ jobs:
           version: 11
           run_install: false
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
       - name: Run tests
         working-directory: sdk/packages/${{ matrix.package }}
         run: pnpm test
+
+  typescript-typecheck:
+    name: TypeScript typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: sdk
+      - name: Typecheck (tsc) all packages
+        run: pnpm -r build
+        working-directory: sdk
 
   spec-validation:
     name: Superpowers validation
@@ -112,9 +133,49 @@ jobs:
         working-directory: tools/superpowers-validate
         run: npm test
 
+  production-gate:
+    name: Production readiness gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contract
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install wasm-opt (binaryen)
+        # Pinned to a binaryen with --llvm-memory-copy-fill-lowering (>= v116),
+        # required to lower Rust >=1.87's bulk-memory ops to NEAR-deployable MVP.
+        run: |
+          curl -sSL https://github.com/WebAssembly/binaryen/releases/download/version_119/binaryen-version_119-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_119/bin" >> "$GITHUB_PATH"
+      - name: Build and lower deployable WASM
+        run: |
+          cargo build -p shielded-pool --target wasm32-unknown-unknown \
+            --release --no-default-features --features groth16-verifier
+          wasm-opt --enable-bulk-memory --llvm-memory-copy-fill-lowering -Oz \
+            --strip-debug --strip-producers \
+            target/wasm32-unknown-unknown/release/shielded_pool.wasm \
+            -o target/wasm32-unknown-unknown/release/shielded_pool.opt.wasm
+      - name: Run production-readiness gate
+        # Generates real Groth16 proofs for all three circuits and validates the
+        # deployable artifact's size + wasm feature set. CI never did this before.
+        run: ./scripts/check-production-readiness.sh
+
   all-green:
     name: All checks passed
-    needs: [rust-contract, deploy-safety, noir-circuits, typescript-sdk, spec-validation]
+    needs:
+      - rust-contract
+      - deploy-safety
+      - noir-circuits
+      - typescript-sdk
+      - typescript-typecheck
+      - spec-validation
+      - production-gate
     runs-on: ubuntu-latest
     steps:
       - run: echo "all CI jobs passed"

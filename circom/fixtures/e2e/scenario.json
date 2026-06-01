@@ -1,0 +1,16 @@
+{
+  "sender_owner": "0x16ff6f564773fa900f5c13ea4b55cd23b7c2e6756644553b115e15174a155a10",
+  "auditor_field": "0x2800c38614ac7a32396ac7271935eda2946d2b64ddd15411a53c80df59612468",
+  "commitmentA": "0x1641751f2bfda84675555f6e0ee90350e48d41a0bdc9a2896397e9b033ba0164",
+  "commitmentB": "0x189075daf08be1b9429efc06cc8b8ff596ada7c9c84946c6b310a8f4ea4a2ac6",
+  "commitmentOut0": "0x1c488a56560162e7ee1657feca9dd6cfacad40de913d9ecc82686ea7c74b4927",
+  "commitmentOut1": "0x2f8e18651f619893157aed08b0030f55874e76eeca3a00ff7d0a035ac8ea0620",
+  "root_after_deposit_a": "0x295b82ed940a7cef310f6c20c4e1b75901a9525019cd8ba6c70527c02376f341",
+  "root_after_deposit_b": "0x09415630e3a9f1a0d1638f68fa28790a6f6bec810363ed0cba9551e3fadeef3a",
+  "root_after_transfer": "0x0ceadd7b942eaf133fc165e5009bf70439d83d5346bb917d5e2cade08bb85b00",
+  "withdraw_recipient": "bob.test.near",
+  "withdraw_relayer": "relayer.test.near",
+  "relayer_fee": "2",
+  "withdraw_amount": "30",
+  "nullifier_out1": "0x20067c59d3d8cf71c0e9625a41ae094d90311f5db8edc3d4bff441bed85d483b"
+}

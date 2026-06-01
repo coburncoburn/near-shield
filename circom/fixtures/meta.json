@@ -1,0 +1,14 @@
+{
+  "deposit": {
+    "r1csSha256": "040aa97361ed249cdcde6ba0d1ed41aad517a473894fd5bf43d521180508bf2a",
+    "nPublic": 4
+  },
+  "transfer": {
+    "r1csSha256": "b4afcbc1de95086ba4c42f05c007f0ceea27ba8953bb355e5dd0890c980b2f37",
+    "nPublic": 9
+  },
+  "withdraw": {
+    "r1csSha256": "ea0d3b1496ad3e2d8503c5eaa6c6dbb7f9a17191d0fe9b1b3a184fa2232ee844",
+    "nPublic": 8
+  }
+}

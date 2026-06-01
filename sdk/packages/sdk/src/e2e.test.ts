@@ -15,11 +15,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  auditorPubkeyToField,
   encodeDisclosure,
   encodeNotePayload,
   Field,
   generateKeyPair,
   sealTo,
+  SEAL_CONTEXT_NOTE,
+  SEAL_CONTEXT_VIEW,
   type NoteCiphertext,
 } from "@shielded-near/core";
 import { AuditorIndex, type RawEvent } from "../../auditor/src/indexer.js";
@@ -79,8 +82,8 @@ describe("canonical e2e", () => {
       memo: "alice->bob",
       timestamp: 1234,
     };
-    const viewCtForA = sealTo(auditorA.publicKey, encodeDisclosure(transferDisclosure));
-    const viewCtForB = sealTo(auditorB.publicKey, encodeDisclosure(transferDisclosure));
+    const viewCtForA = sealTo(auditorA.publicKey, encodeDisclosure(transferDisclosure), SEAL_CONTEXT_VIEW);
+    const viewCtForB = sealTo(auditorB.publicKey, encodeDisclosure(transferDisclosure), SEAL_CONTEXT_VIEW);
 
     // Note ciphertext addressed to Bob's viewing key
     const noteForBob = sealTo(
@@ -88,9 +91,10 @@ describe("canonical e2e", () => {
       encodeNotePayload({
         amount: 100n,
         ownerPubkey: Field.fromHex(bob.address().ownerPubkey),
-        auditorPubkey: Field.fromHex("0x" + Buffer.from(auditorB.publicKey).toString("hex")),
+        auditorPubkey: auditorPubkeyToField(auditorB.publicKey),
         blinding: Field.fromHex("0x" + "11".repeat(32)),
-      }, auditorB.publicKey)
+      }, auditorB.publicKey),
+      SEAL_CONTEXT_NOTE
     );
 
     const transferEvent: RawEvent = {
