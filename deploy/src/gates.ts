@@ -32,6 +32,7 @@ export function assertNotDevKey(c: Circuit, bytes: Uint8Array): void {
 /** Build-check: production groth16-verifier WASM (not mock); size-gated. Throws on failure. */
 export function runReadinessCheck(repoRoot: string): void {
   const r = spawnSync("bash", ["scripts/check-production-readiness.sh"], { cwd: repoRoot, encoding: "utf8" });
+  if (r.error) throw new Error(`failed to spawn readiness check: ${r.error.message}`);
   if (r.status !== 0)
     throw new Error(`production readiness check failed (exit ${r.status}):\n${r.stdout}\n${r.stderr}`);
 }

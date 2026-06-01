@@ -7,10 +7,11 @@ import {
   assertNotDevKey,
   vkSha256,
   DEV_VK_FINGERPRINTS,
+  runReadinessCheck,
   type Circuit,
 } from "./gates.js";
 
-// Repo root: deploy/src → ../../.. = repo root
+// Repo root: deploy/src → ../.. = repo root
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
 
 function readVk(path: string): SnarkjsVk {
@@ -20,6 +21,14 @@ function readVk(path: string): SnarkjsVk {
 function devVkBytes(c: Circuit): Uint8Array {
   return vkJsonToContractBytes(readVk(resolve(REPO_ROOT, `circom/fixtures/${c}/vk.json`)));
 }
+
+// ── Test 0: runReadinessCheck smoke test ──────────────────────────────────────
+
+describe("runReadinessCheck", () => {
+  it("throws when repoRoot does not exist", () => {
+    expect(() => runReadinessCheck("/nonexistent-repo-root-xyz")).toThrow();
+  });
+});
 
 // ── Test 1: assertVkLength ────────────────────────────────────────────────────
 
