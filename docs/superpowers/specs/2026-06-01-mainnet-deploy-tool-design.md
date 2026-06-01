@@ -50,9 +50,18 @@ A TS deploy tool (new `deploy/` workspace package; reuses `@shielded-near/sdk`
 1. **Production WASM, not mock.** Run `scripts/check-production-readiness.sh` (rejects the default
    mock-verifier build, requires the `groth16-verifier` opt WASM, size-checks it). Record the WASM
    sha256.
-2. **No DEV keys.** Run the `DEPLOY_VK_DIR` fingerprint guard against the VK source dir; abort if
-   any VK matches a registered DEV fingerprint. (Ceremony VKs are non-DEV → pass; the DEV keys in
-   `circom/build/keys` / `circom/fixtures` → refused.)
+2. **No DEV keys — fingerprint the ACTUAL bytes being deployed.** The tool computes
+   `sha256(vkJsonToContractBytes(<the vk.json it is about to deploy>))` for each circuit and aborts
+   if it matches a registered DEV fingerprint (the same sha256 denylist used by
+   `check-production-readiness.sh`). **This is the authoritative gate** — fingerprinting the bytes
+   the tool will actually send (not just whatever `vk.bin` files happen to sit in a directory)
+   closes a bypass: the readiness script's `DEPLOY_VK_DIR` guard only scans `vk.bin` files, so a
+   DEV-key directory that contains only `*_vk.json` (e.g. `circom/build/keys`) would pass it
+   vacuously. The tool MAY additionally invoke the readiness-script guard as a complementary check,
+   but the byte-level fingerprint of its own init args is what must block DEV keys regardless of
+   source-dir layout. (Ceremony VKs are non-DEV → pass.)
+   - DEV fingerprint source of truth: the three sha256s registered in `check-production-readiness.sh`,
+     which match `circom/fixtures/<c>/vk.bin` exactly (the canonical committed DEV `vk.bin`s).
 3. **VKs present + well-formed.** Each `vk.bin` is the expected length (deposit 768 / transfer 1088
    / withdraw 1024).
 
@@ -64,8 +73,11 @@ The tool cannot deploy DEV keys or a mock-verifier WASM on any network.
   `usdc_token`. **`usdc_token` is REQUIRED with no default** — the runbook directs the operator to
   verify the canonical mainnet USDC account id; the tool does not hardcode/guess it. CLI/env
   overrides for account ids.
-- For each circuit: read the ceremony `vk.json`, run `vkJsonToContractBytes` → `number[]`; assemble
-  the `new(owner, usdc_token, vk_deposit, vk_transfer, vk_withdraw)` JSON args.
+- For each circuit: read the **ceremony** `vk.json` (`<vk-dir>/<c>/vk.json` or `<vk-dir>/<c>_vk.json`,
+  e.g. `ceremony/out/`), run `vkJsonToContractBytes` → `number[]`; assemble the
+  `new(owner, usdc_token, vk_deposit, vk_transfer, vk_withdraw)` JSON args. (Note: this is the
+  ceremony VK source — NOT the demo's `circom/build/keys/<c>_vk.json`, which holds DEV keys; the
+  sandbox path mirrors the demo's *mechanism* but reads ceremony VKs.)
 
 ### 3. Execute (per network)
 
@@ -89,8 +101,12 @@ Cross-links `ceremony/RUNBOOK.md`.
 
 - **Sandbox deploy+init+post-verify** with the ceremony dry-run VKs (`ceremony/out`) → succeeds;
   `owner`/`usdc_token`/`paused` views match config; receipt written.
-- **Guard teeth:** `--vk-dir` pointing at DEV keys (`circom/fixtures` or `circom/build/keys`)
-  **aborts** the deploy; a mock-verifier WASM is refused by the readiness check.
+- **Guard teeth:** `--vk-dir` pointing at the committed DEV keys (`circom/fixtures`, which has the
+  registered `vk.bin` fingerprints) **aborts** the deploy via the byte-level fingerprint check.
+  Crucially, also test a DEV-key dir that has only `*_vk.json` and NO `vk.bin` (e.g. a copy of
+  `circom/build/keys`): the tool must STILL abort (because it fingerprints the bytes it would
+  deploy), proving it doesn't rely on the vacuous `vk.bin`-only dir scan. A mock-verifier WASM is
+  refused by the readiness check.
 - **Mainnet emit path:** the emitted near-cli-rs command + init JSON are well-formed (correct
   method, VK byte-arrays present, owner/usdc_token), asserted **without broadcasting**.
 
